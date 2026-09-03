@@ -28,6 +28,7 @@ class EvidenceStatus(StrEnum):
 class EmergencyStatus(StrEnum):
     NONE = "none"
     PHEIC = "pheic"
+    PHEIC_ENDED = "pheic_ended"
     REGIONAL = "regional"
 
 

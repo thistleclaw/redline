@@ -33,7 +33,7 @@ from redline.ai import (
 from redline.aliases import BLUEPRINT_EVIDENCE, disease_by_key
 from redline.config import Config, config_path, data_dir
 from redline.database import Database
-from redline.geography import PLACES, REGION_BOUNDS
+from redline.geography import REGION_BOUNDS, find_place
 from redline.i18n import COMMANDS, command_help, normalize_language, tr
 from redline.map_render import BrailleMapRenderer, event_points
 from redline.models import utcnow
@@ -486,7 +486,7 @@ class RedlineApp(App[None]):
 
     def render_topline(self) -> Text:
         unread = len(self.database.unread_alert_event_ids())
-        pheic = sum(1 for row in self.rows if row["emergency"] == "pheic")
+        pheic = self.database.active_pheic_count()
         text = Text(tr(self.config.language, "top.title"), style="bold #dbeafe")
         if self.test_mode:
             text.append(f"    {tr(self.config.language, 'top.test')}", style="bold #f59e0b")
@@ -1149,8 +1149,8 @@ class RedlineApp(App[None]):
         requested = args[0].casefold()
         if requested in REGION_BOUNDS:
             self.focus = requested
-        elif requested in PLACES:
-            self.focus = PLACES[requested].region
+        elif place := find_place(args[0]):
+            self.focus = place.region
         else:
             raise ValueError(tr(self.config.language, "command.focus_unknown"))
         self.viewer_open = False

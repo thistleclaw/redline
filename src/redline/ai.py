@@ -481,7 +481,7 @@ def _validate_scenario_event(raw: object) -> dict[str, object]:
     map_scope = str(raw.get("map_scope", default_scope))
     if evidence not in {item.value for item in EvidenceStatus} - {"unknown"}:
         raise GeminiError("Scenario event has invalid evidence status")
-    if emergency not in {item.value for item in EmergencyStatus}:
+    if emergency not in {"none", "pheic", "regional"}:
         raise GeminiError("Scenario event has invalid emergency status")
     if map_status not in {item.value for item in MapStatus}:
         raise GeminiError("Scenario event has invalid map status")

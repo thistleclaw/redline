@@ -5,6 +5,7 @@ from dataclasses import replace
 from datetime import timedelta
 
 from redline.database import Database
+from redline.models import EmergencyStatus, utcnow
 
 
 def test_documents_are_versioned_events_keep_provenance(tmp_path, document, event):
@@ -66,6 +67,82 @@ def test_source_error_keeps_last_success_for_stale_display(tmp_path):
     assert state.last_success is not None
     assert state.error == "timeout"
     assert not state.stale
+
+
+def test_default_source_health_respects_its_own_next_due_and_grace(tmp_path):
+    database = Database(tmp_path / "redline.sqlite3")
+    now = utcnow()
+    database.record_source_attempt(
+        "who_blueprint", success=True, next_due=now + timedelta(hours=21)
+    )
+    database.connection.execute(
+        "UPDATE source_state SET last_success = ? WHERE source_id = ?",
+        ((now - timedelta(hours=3)).isoformat(), "who_blueprint"),
+    )
+    database.connection.commit()
+
+    assert not database.source_health()[0].stale
+
+
+def test_default_source_health_marks_source_stale_after_next_due_grace(tmp_path):
+    database = Database(tmp_path / "redline.sqlite3")
+    now = utcnow()
+    database.record_source_attempt("who_don", success=True, next_due=now - timedelta(minutes=16))
+    database.connection.execute(
+        "UPDATE source_state SET last_success = ? WHERE source_id = ?",
+        ((now - timedelta(minutes=30)).isoformat(), "who_don"),
+    )
+    database.connection.commit()
+
+    assert database.source_health()[0].stale
+
+
+def test_active_pheic_count_deduplicates_updates_and_uses_latest_explicit_state(
+    tmp_path, document, event
+):
+    database = Database(tmp_path / "redline.sqlite3")
+    first_id, _ = database.save_document(document)
+    database.save_event(replace(event, emergency=EmergencyStatus.PHEIC), first_id)
+
+    update_document = replace(
+        document,
+        canonical_url=document.canonical_url + "/update",
+        content_hash="document-hash-update",
+        published_at=document.published_at + timedelta(days=1),
+    )
+    update_id, _ = database.save_document(update_document)
+    database.save_event(
+        replace(
+            event,
+            event_id="event-update",
+            document_url=update_document.canonical_url,
+            situation_key="ebola|Rwanda|update",
+            emergency=EmergencyStatus.PHEIC,
+            occurred_at=update_document.published_at,
+        ),
+        update_id,
+    )
+    assert database.active_pheic_count() == 1
+
+    ended_document = replace(
+        document,
+        canonical_url=document.canonical_url + "/ended",
+        content_hash="document-hash-ended",
+        published_at=document.published_at + timedelta(days=2),
+    )
+    ended_id, _ = database.save_document(ended_document)
+    database.save_event(
+        replace(
+            event,
+            event_id="event-ended",
+            document_url=ended_document.canonical_url,
+            situation_key="ebola|global|ended",
+            emergency=EmergencyStatus.PHEIC_ENDED,
+            occurred_at=ended_document.published_at,
+        ),
+        ended_id,
+    )
+    assert database.active_pheic_count() == 0
 
 
 def test_history_query_limits_events_by_occurrence_time(tmp_path, document, event):

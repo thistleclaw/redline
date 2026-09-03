@@ -415,21 +415,48 @@ class Database:
             ),
         )
 
-    def source_health(self, stale_after: timedelta = timedelta(hours=2)) -> list[SourceHealth]:
+    def source_health(self, stale_after: timedelta | None = None) -> list[SourceHealth]:
         now = utcnow()
         rows = self.connection.execute("SELECT * FROM source_state ORDER BY source_id").fetchall()
-        return [
-            SourceHealth(
-                source_id=row["source_id"],
-                last_success=_dt(row["last_success"]),
-                last_attempt=_dt(row["last_attempt"]),
-                error=row["error"],
-                stale=not row["last_success"]
-                or now - (_dt(row["last_success"]) or now) > stale_after,
-                next_due=_dt(row["next_due"]),
+        health: list[SourceHealth] = []
+        for row in rows:
+            last_success = _dt(row["last_success"])
+            next_due = _dt(row["next_due"])
+            if last_success is None:
+                stale = True
+            elif stale_after is not None:
+                stale = now - last_success > stale_after
+            elif next_due is not None:
+                stale = now > next_due + timedelta(minutes=15)
+            else:
+                stale = now - last_success > timedelta(hours=2)
+            health.append(
+                SourceHealth(
+                    source_id=row["source_id"],
+                    last_success=last_success,
+                    last_attempt=_dt(row["last_attempt"]),
+                    error=row["error"],
+                    stale=stale,
+                    next_due=next_due,
+                )
             )
-            for row in rows
-        ]
+        return health
+
+    def active_pheic_count(self) -> int:
+        """Count latest explicit PHEIC states by disease, independent of UI filters/history."""
+        rows = self.connection.execute(
+            """
+            SELECT disease_key, situation_key, emergency
+            FROM events
+            WHERE emergency IN ('pheic', 'pheic_ended')
+            ORDER BY COALESCE(occurred_at, discovered_at) DESC, discovered_at DESC
+            """
+        ).fetchall()
+        latest: dict[str, str] = {}
+        for row in rows:
+            identity = str(row["disease_key"] or row["situation_key"])
+            latest.setdefault(identity, str(row["emergency"]))
+        return sum(status == "pheic" for status in latest.values())
 
     def events(
         self,

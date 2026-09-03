@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import timedelta
 
 import httpx
 import pytest
 
 from redline.sources import (
+    USER_AGENT,
     CDCOutbreakAdapter,
     ECDCCDTRAdapter,
     OfficialSourceAdapter,
@@ -15,6 +17,11 @@ from redline.sources import (
     WHOHealthEmergencyDashboardAdapter,
     make_adapters,
 )
+
+
+def test_user_agent_points_to_the_real_repository():
+    assert "github.com/thistleclaw/redline" in USER_AGENT
+    assert "github.com/redline-epivigil" not in USER_AGENT
 
 
 @pytest.mark.asyncio
@@ -148,8 +155,79 @@ async def test_dashboard_adapter_keeps_dashboard_canonical_url_not_a_fragment_li
         WHOHealthEmergencyDashboardAdapter(spec, client)
         .extract_events(documents[0])[0]
         .emergency.value
-        == "pheic"
+        == "none"
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("excerpt", "emergency", "evidence"),
+    [
+        ("WHO determined that the event does not constitute a PHEIC.", "none", "reported"),
+        ("WHO determined that the event constitutes a PHEIC.", "pheic", "reported"),
+        ("WHO determined that the event no longer constitutes a PHEIC.", "pheic_ended", "reported"),
+        ("The event was declared a PHEIC in 2020.", "none", "reported"),
+        ("The event was previously declared a PHEIC.", "none", "reported"),
+        ("The PHEIC ended in 2020.", "none", "reported"),
+        ("The previously declared PHEIC remains in effect.", "pheic", "reported"),
+        ("No confirmed cases have been reported.", "none", "reported"),
+        (
+            "A suspected case remains under investigation; no confirmed cases exist.",
+            "none",
+            "potential",
+        ),
+        ("A laboratory-confirmed Ebola case was reported.", "none", "confirmed"),
+    ],
+)
+async def test_generic_extraction_is_sentence_scoped_and_negation_aware(
+    document, excerpt, emergency, evidence
+):
+    spec = SourceSpec(
+        "test",
+        "Test authority",
+        "https://health.example.test/index",
+        "epidemiological_alert",
+        timedelta(minutes=15),
+        ("health.example.test",),
+    )
+    candidate = replace(
+        document,
+        title="Ebola update - Rwanda",
+        excerpt=excerpt,
+        original_text=excerpt,
+    )
+    async with httpx.AsyncClient() as client:
+        event = OfficialSourceAdapter(spec, client).extract_events(candidate)[0]
+
+    assert event.emergency.value == emergency
+    assert event.evidence.value == evidence
+
+
+@pytest.mark.asyncio
+async def test_generic_extraction_ignores_unrelated_deep_document_mentions(document):
+    spec = SourceSpec(
+        "test",
+        "Test authority",
+        "https://health.example.test/index",
+        "epidemiological_alert",
+        timedelta(minutes=15),
+        ("health.example.test",),
+    )
+    candidate = replace(
+        document,
+        title="Cholera update - Rwanda",
+        excerpt="A suspected cholera case is under investigation in Rwanda.",
+        original_text=(
+            "A suspected cholera case is under investigation in Rwanda. "
+            "Historical appendix: Ebola was declared a PHEIC in 2020."
+        ),
+    )
+    async with httpx.AsyncClient() as client:
+        event = OfficialSourceAdapter(spec, client).extract_events(candidate)[0]
+
+    assert event.disease_key == "cholera"
+    assert event.emergency.value == "none"
+    assert event.evidence.value == "potential"
 
 
 @pytest.mark.asyncio

@@ -114,6 +114,16 @@ WHO situation reports and Health Emergency Dashboard, CDC Outbreaks, ECDC CDTR, 
 epidemiological alerts, Africa CDC event-based surveillance reports, and WHO R&D Blueprint
 pages. Source-specific freshness and errors are visible in the TUI.
 
+Generic extraction is deliberately conservative and sentence-scoped. A bare mention of PHEIC or
+the word “confirmed” is not sufficient: explicit current assertions are required, while negated,
+ended, and clearly historical statements are handled separately. Disease aliases require token
+boundaries. Country and city resolution uses an offline GeoNames-derived gazetteer with alternate
+names; watch regions compare geographic identities instead of arbitrary substrings.
+
+Freshness follows each source's own `next_due` plus a grace period, rather than a universal
+two-hour timeout. The top-line `PHEIC: N` is independent of UI filters and history windows: it
+deduplicates updates and uses the latest explicit active/ended state for each disease.
+
 PAHO's Pantheon frontend may reject the normal `httpx` transport with HTTP 403. The PAHO adapter
 then retries the same official allow-listed index and document pages through Python's proxy-free
 standard HTTPS transport, validates every final redirect target, caps index responses at 5 MB and
@@ -136,3 +146,7 @@ Grey fills only affected land for an explicit human-population extinction stage;
 greys the world's landmasses instead of drawing a point or a square. Global dashboards,
 worldwide context pages, unknown locations, R&D context and broad risk-assessment reports never
 become map markers. REDLINE does not infer extinction from official reports.
+
+Country and city names and coordinates are supplied locally by `geonamescache`, derived from
+[GeoNames](https://www.geonames.org/) data under CC BY 4.0. REDLINE makes no runtime requests to
+the GeoNames service.

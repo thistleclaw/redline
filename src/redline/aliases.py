@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 
@@ -65,9 +66,13 @@ BLUEPRINT_EVIDENCE = {
 
 def find_disease(text: str) -> DiseaseAlias | None:
     lowered = text.casefold()
-    return next(
-        (item for item in DISEASES if any(alias in lowered for alias in item.aliases)), None
-    )
+    matches = [
+        (len(alias), item)
+        for item in DISEASES
+        for alias in item.aliases
+        if re.search(rf"(?<!\w){re.escape(alias.casefold())}(?!\w)", lowered)
+    ]
+    return max(matches, key=lambda match: match[0])[1] if matches else None
 
 
 def disease_by_key(key: str | None) -> DiseaseAlias | None:

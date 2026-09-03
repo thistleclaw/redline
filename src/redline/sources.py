@@ -27,7 +27,7 @@ from redline.models import (
     utcnow,
 )
 
-USER_AGENT = "REDLINE/0.1 (+https://github.com/redline-epivigil; local-first monitoring)"
+USER_AGENT = "REDLINE/0.1 (+https://github.com/thistleclaw/redline; local-first monitoring)"
 
 
 class SourceError(RuntimeError):
@@ -154,6 +154,114 @@ def parse_date(value: str | None) -> datetime | None:
 def compact_text(node: object, *, limit: int = 10_000) -> str:
     text = node.get_text(" ", strip=True) if hasattr(node, "get_text") else str(node)
     return re.sub(r"\s+", " ", text).strip()[:limit]
+
+
+PHEIC_TERM = r"(?:public health emergency of international concern|\bpheic\b)"
+PHEIC_NEGATED = re.compile(
+    rf"(?:does|did|would)\s+not\s+constitute[^.]*{PHEIC_TERM}|"
+    rf"(?:is|was)\s+not\s+(?:a\s+)?{PHEIC_TERM}|"
+    rf"no\s+{PHEIC_TERM}",
+    re.IGNORECASE,
+)
+PHEIC_ENDED = re.compile(
+    rf"no\s+longer\s+constitutes?[^.]*{PHEIC_TERM}|"
+    rf"{PHEIC_TERM}[^.]{{0,100}}(?:ended|terminated|lifted|ceased)|"
+    rf"(?:ended|terminated|lifted)[^.]{{0,100}}{PHEIC_TERM}",
+    re.IGNORECASE,
+)
+PHEIC_ACTIVE = re.compile(
+    rf"(?:declared|constitutes?|remains?|continues?\s+as)[^.]{{0,120}}{PHEIC_TERM}|"
+    rf"{PHEIC_TERM}[^.]{{0,100}}(?:declared|ongoing|remains?\s+in\s+effect|continues?)",
+    re.IGNORECASE,
+)
+CONFIRMED_NEGATED = re.compile(
+    r"\b(?:no|zero)\s+(?:new\s+)?(?:laboratory[- ]?)?confirmed\s+cases?\b|"
+    r"\b(?:case|cases|infection|infections)\s+(?:has|have|had|was|were)\s+not\s+"
+    r"(?:been\s+)?confirmed\b|\bnot\s+(?:yet\s+)?confirmed\b|"
+    r"\bwithout\s+(?:any\s+)?confirmed\s+cases?\b",
+    re.IGNORECASE,
+)
+CONFIRMED_ACTIVE = re.compile(
+    r"\b(?:laboratory[- ]?)?confirmed\s+(?:case|cases|infection|infections|"
+    r"transmission|outbreak)\b|"
+    r"\b(?:case|cases|infection|infections|outbreak)\s+(?:has|have|was|were)\s+"
+    r"(?:laboratory[- ]?)?confirmed\b|"
+    r"\bconfirmed\b[^.]{0,80}\b(?:case|cases|infection|infections|transmission|outbreak)\b|"
+    r"\bdeclared\s+(?:an?\s+)?outbreak\b|\boutbreak\s+(?:has\s+been|was)\s+declared\b",
+    re.IGNORECASE,
+)
+POTENTIAL_ACTIVE = re.compile(
+    r"\b(?:potential|suspected|probable|possible|unconfirmed)\s+"
+    r"(?:[^.;:]{1,60}\s+)?(?:case|cases|infection|infections|outbreak|transmission)\b|"
+    r"\bunknown\s+cause\b",
+    re.IGNORECASE,
+)
+REGIONAL_ACTIVE = re.compile(
+    r"\b(?:declared|constitutes?|remains?)\b[^.]{0,100}"
+    r"(?:public health emergency of continental security|regional emergency)\b",
+    re.IGNORECASE,
+)
+HISTORICAL_CONTEXT = re.compile(
+    r"\b(?:previously|formerly|historically|in\s+the\s+past|at\s+the\s+time|had\s+been)\b",
+    re.IGNORECASE,
+)
+CURRENT_CONTINUITY = re.compile(
+    r"\b(?:currently|ongoing|remains?|continues?|still\s+in\s+effect)\b", re.IGNORECASE
+)
+
+
+def _assertion_sentences(document: SourceDocument) -> list[str]:
+    """Use title and concise source metadata, not unrelated mentions deep in a document."""
+    excerpt = document.excerpt.strip() or document.original_text[:1800]
+    raw = f"{document.title}\n{excerpt}"
+    sentences = [
+        re.sub(r"\s+", " ", sentence).strip()
+        for sentence in re.split(r"(?<=[.!?])\s+|[\r\n]+", raw)
+        if sentence.strip()
+    ]
+    return list(dict.fromkeys(sentences))
+
+
+def _is_historical(sentence: str, reference_year: int | None) -> bool:
+    years = [int(year) for year in re.findall(r"\b20\d{2}\b", sentence)]
+    old_year = bool(reference_year and years and max(years) < reference_year - 1)
+    historical_wording = bool(
+        HISTORICAL_CONTEXT.search(sentence) and not CURRENT_CONTINUITY.search(sentence)
+    )
+    return old_year or historical_wording
+
+
+def _emergency_status(
+    sentences: Iterable[str], reference_year: int | None = None
+) -> EmergencyStatus:
+    pheic_sentences = [sentence for sentence in sentences if re.search(PHEIC_TERM, sentence, re.I)]
+    if any(
+        PHEIC_ENDED.search(sentence) and not _is_historical(sentence, reference_year)
+        for sentence in pheic_sentences
+    ):
+        return EmergencyStatus.PHEIC_ENDED
+    if any(PHEIC_NEGATED.search(sentence) for sentence in pheic_sentences):
+        return EmergencyStatus.NONE
+    if any(
+        PHEIC_ACTIVE.search(sentence) and not _is_historical(sentence, reference_year)
+        for sentence in pheic_sentences
+    ):
+        return EmergencyStatus.PHEIC
+    if any(REGIONAL_ACTIVE.search(sentence) for sentence in sentences):
+        return EmergencyStatus.REGIONAL
+    return EmergencyStatus.NONE
+
+
+def _evidence_status(sentences: Iterable[str], reference_year: int | None = None) -> EvidenceStatus:
+    potential = False
+    for sentence in sentences:
+        if POTENTIAL_ACTIVE.search(sentence):
+            potential = True
+        if CONFIRMED_NEGATED.search(sentence):
+            continue
+        if CONFIRMED_ACTIVE.search(sentence) and not _is_historical(sentence, reference_year):
+            return EvidenceStatus.CONFIRMED
+    return EvidenceStatus.POTENTIAL if potential else EvidenceStatus.REPORTED
 
 
 class OfficialSourceAdapter:
@@ -341,32 +449,16 @@ class OfficialSourceAdapter:
         )
 
     def extract_events(self, document: SourceDocument) -> list[Event]:
-        text = f"{document.title}\n{document.original_text}"
-        disease = find_disease(text)
-        place = find_place(text)
-        lowered = text.casefold()
-        if "public health emergency of international concern" in lowered or re.search(
-            r"\bpheic\b", lowered
-        ):
-            emergency = EmergencyStatus.PHEIC
-        elif (
-            "public health emergency of continental security" in lowered
-            or "regional emergency" in lowered
-        ):
-            emergency = EmergencyStatus.REGIONAL
-        else:
-            emergency = EmergencyStatus.NONE
-        if any(
-            token in lowered
-            for token in ("confirmed", "outbreak", "epidemiological alert", "declared")
-        ):
-            evidence = EvidenceStatus.CONFIRMED
-        elif any(
-            token in lowered for token in ("potential", "suspected", "unknown cause", "possible")
-        ):
-            evidence = EvidenceStatus.POTENTIAL
-        else:
-            evidence = EvidenceStatus.REPORTED
+        sentences = _assertion_sentences(document)
+        title_disease = find_disease(document.title)
+        disease_sentence = next((item for item in sentences if find_disease(item)), "")
+        disease = title_disease or find_disease(disease_sentence)
+        event_context = "\n".join([document.title, disease_sentence, *sentences[:4]])
+        place = find_place(event_context)
+        lowered = event_context.casefold()
+        reference_year = document.published_at.year if document.published_at else None
+        emergency = _emergency_status(sentences, reference_year)
+        evidence = _evidence_status(sentences, reference_year)
         territory = place.label if place else self._region_from_text(lowered)
         situation_key = "|".join(
             [
@@ -388,7 +480,7 @@ class OfficialSourceAdapter:
                 territory=territory,
                 latitude=place.latitude if place else None,
                 longitude=place.longitude if place else None,
-                location_precision=LocationPrecision.COUNTRY
+                location_precision=place.precision
                 if place
                 else LocationPrecision.REGION
                 if territory

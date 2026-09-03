@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -10,6 +11,7 @@ from googletrans import Translator
 
 from redline.config import Config, cache_dir
 from redline.database import Database
+from redline.geography import find_place, normalize_place_name, places_overlap
 from redline.i18n import tr
 from redline.models import EmergencyStatus, Event, SourceDocument, utcnow
 from redline.sources import OfficialSourceAdapter, SourceError, make_adapters
@@ -211,11 +213,18 @@ class SyncService:
     def _watch_match(self, territory: str | None) -> bool:
         if not territory:
             return False
-        current = territory.casefold()
-        return any(
-            watch.casefold() in current or current in watch.casefold()
-            for watch in self.config.watch_regions
-        )
+        current_place = find_place(territory)
+        current = normalize_place_name(territory)
+        for watch in self.config.watch_regions:
+            watch_place = find_place(watch)
+            if places_overlap(current_place, watch_place):
+                return True
+            if current_place is not None and watch_place is not None:
+                continue
+            watched = normalize_place_name(watch)
+            if watched and re.search(rf"(?<!\w){re.escape(watched)}(?!\w)", current):
+                return True
+        return False
 
     def _should_alert(self, event: Event, was_seen: bool) -> bool:
         if event.emergency is EmergencyStatus.PHEIC:

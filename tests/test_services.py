@@ -168,3 +168,21 @@ async def test_startup_retry_does_not_fetch_sources_without_an_error(tmp_path, d
 
     assert reports == []
     assert adapter.fetch_headers == []
+
+
+def test_watch_region_uses_geographic_identity_not_substring(tmp_path):
+    service = SyncService(
+        Database(tmp_path / "redline.sqlite3"),
+        Config(
+            initialized=True,
+            watch_regions=["Старобельск", "Republic of the Congo"],
+            translation_enabled=False,
+        ),
+        adapters=[],
+        translator=GoogleTranslator(False),
+        document_cache_root=tmp_path / "cache",
+    )
+
+    assert service._watch_match("Starobilsk, Ukraine")
+    assert service._watch_match("Republic of the Congo")
+    assert not service._watch_match("Democratic Republic of the Congo")

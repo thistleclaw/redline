@@ -29,6 +29,18 @@ retain each source document even when deterministic aliases group documents into
 The model never calculates a disease-risk score. Red alerts represent either a PHEIC or a new,
 official confirmed alert in a configured watch-region.
 
+Generic event extraction is sentence-scoped to the title and concise official metadata. PHEIC,
+regional-emergency, confirmed-case and potential-case states require explicit assertion patterns;
+negated, ended and clearly historical statements are classified separately. Disease aliases use
+token boundaries. This is intentionally a conservative deterministic parser, not unrestricted NLP,
+and the primary source remains the authority whenever wording is ambiguous.
+
+Locations are resolved locally through the pinned `geonamescache` dependency (GeoNames-derived
+countries, cities and alternate names). Resolved watch regions compare stable geographic identity
+and country containment; substring fallback is used only when one side cannot be resolved. Generic
+three-letter country codes are excluded because normal prose such as “can” would otherwise produce
+false coordinates.
+
 ## Local lifecycle
 
 - `~/.config/redline/config.toml`: operator-owned configuration.
@@ -36,7 +48,13 @@ official confirmed alert in a configured watch-region.
 - `~/.cache/redline/documents`: source text cache, purged after 30 days.
 
 The scheduler wakes every 15 minutes. Each source has its own lower poll limit, ETag and
-Last-Modified state. A failed source keeps its last-good data and becomes visibly stale.
+Last-Modified state. A failed source keeps its last-good data. Freshness is evaluated against that
+source's stored `next_due` plus a scheduler-sized 15-minute grace period, so a healthy daily or
+weekly source does not become stale before it was due to run.
+
+The top-line PHEIC counter is database state, not presentation state. It considers only explicit
+PHEIC declarations and explicit ended states, takes the latest such state per disease and therefore
+does not change when the operator filters the feed or changes the history window.
 
 WHO DON is a JavaScript-rendered index. Its adapter queries WHO's own allow-listed OData endpoint
 for canonical DON identifiers, then downloads the corresponding WHO pages. A page's official
