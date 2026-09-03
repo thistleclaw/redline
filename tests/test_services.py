@@ -154,7 +154,7 @@ async def test_startup_retry_bypasses_backoff_only_for_failed_source(tmp_path, d
 
 
 @pytest.mark.asyncio
-async def test_startup_retry_does_not_fetch_sources_without_an_error(tmp_path, document, event):
+async def test_startup_sync_fetches_a_source_that_has_never_run(tmp_path, document, event):
     adapter = FakeAdapter(document, event)
     service = SyncService(
         Database(tmp_path / "redline.sqlite3"),
@@ -166,7 +166,30 @@ async def test_startup_retry_does_not_fetch_sources_without_an_error(tmp_path, d
 
     reports = await service.sync(retry_failed=True)
 
-    assert reports == []
+    assert reports[0].fetched == 1
+    assert adapter.fetch_headers == [(None, None)]
+
+
+@pytest.mark.asyncio
+async def test_startup_sync_respects_next_due_for_a_healthy_source(tmp_path, document, event):
+    database = Database(tmp_path / "redline.sqlite3")
+    database.record_source_attempt(
+        "who_don",
+        success=True,
+        next_due=utcnow() + timedelta(hours=1),
+    )
+    adapter = FakeAdapter(document, event)
+    service = SyncService(
+        database,
+        Config(initialized=True, translation_enabled=False),
+        adapters=[adapter],
+        translator=GoogleTranslator(False),
+        document_cache_root=tmp_path / "cache",
+    )
+
+    reports = await service.sync(retry_failed=True)
+
+    assert reports[0].skipped is True
     assert adapter.fetch_headers == []
 
 

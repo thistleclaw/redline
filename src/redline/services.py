@@ -98,13 +98,6 @@ class SyncService:
             adapters = self._adapters or make_adapters(client, self.config.enabled_sources)
             if source_id:
                 adapters = [adapter for adapter in adapters if adapter.spec.source_id == source_id]
-            if retry_failed:
-                failed_sources = {
-                    item.source_id for item in self.database.source_health() if item.error
-                }
-                adapters = [
-                    adapter for adapter in adapters if adapter.spec.source_id in failed_sources
-                ]
             reports = [
                 await self._sync_adapter(
                     adapter,

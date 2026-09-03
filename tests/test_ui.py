@@ -75,6 +75,22 @@ def test_crt_tick_is_safe_before_widgets_mount() -> None:
     app.tick_crt()
 
 
+@pytest.mark.asyncio
+async def test_initialized_tui_starts_background_sync(tmp_path):
+    calls = []
+    app = RedlineApp(
+        config=Config(initialized=True, crt_effects=False, translation_enabled=False),
+        database=Database(tmp_path / "redline.sqlite3"),
+        auto_sync=True,
+    )
+    app.run_sync = lambda **kwargs: calls.append(kwargs)
+
+    async with app.run_test(size=(120, 30)) as pilot:
+        await pilot.pause()
+
+    assert calls == [{"force": False, "retry_failed": True}]
+
+
 @pytest.mark.parametrize(
     ("value", "weeks"),
     [("90d", 13), ("26w", 26), ("18m", 78), ("3y", 156), ("10y", 520)],

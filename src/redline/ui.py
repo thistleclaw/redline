@@ -244,6 +244,7 @@ class RedlineApp(App[None]):
         database: Database | None = None,
         gemini_client: GeminiClient | None = None,
         command_history_path: Path | None = None,
+        auto_sync: bool | None = None,
     ) -> None:
         super().__init__()
         self.config = config or Config.load()
@@ -279,6 +280,10 @@ class RedlineApp(App[None]):
         self.command_history = self._load_command_history()
         self.command_history_index = len(self.command_history)
         self.command_history_draft = ""
+        # Applications launched by the CLI own their database and synchronize on
+        # startup. Tests and embedders that inject a database remain deterministic
+        # unless they explicitly opt in.
+        self.auto_sync = database is None if auto_sync is None else auto_sync
 
     def compose(self) -> ComposeResult:
         with Vertical(id="topbar"):
@@ -312,10 +317,10 @@ class RedlineApp(App[None]):
         self.set_interval(float(self.config.sync_minutes * 60), self.scheduled_sync)
         if not self.config.initialized:
             self.push_screen(SetupScreen(self.config), self.setup_finished)
-        else:
+        elif self.auto_sync:
             # A restart is often how users recover after an adapter or network fix.
-            # Retry failed sources immediately, while healthy sources still respect
-            # their individual polling intervals.
+            # Check every due source and retry failed ones immediately. Healthy
+            # sources still respect their individual polling intervals.
             self.run_sync(force=False, retry_failed=True)
 
     def setup_finished(self, config: Config) -> None:
@@ -414,7 +419,7 @@ class RedlineApp(App[None]):
             self.query_one("#feed-box").styles.height = "55%"
             self.query_one("#detail-box").styles.height = "45%"
 
-    @work(exclusive=True)
+    @work(group="sync", exclusive=True)
     async def run_sync(
         self,
         force: bool = False,

@@ -45,6 +45,8 @@ pipx install '.[documents]'
 
 Run `redline`. The first run opens a short local setup. Configuration is kept in
 `~/.config/redline/config.toml`; SQLite data are kept in `~/.local/share/redline/`.
+On later launches REDLINE automatically checks sources in the background: due sources are
+updated while fresh sources retain their individual polling intervals.
 Set `translation_enabled = false` in the `[app]` section to keep all document text local and
 show the English originals only.
 
