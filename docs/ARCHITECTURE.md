@@ -56,6 +56,28 @@ The top-line PHEIC counter is database state, not presentation state. It conside
 PHEIC declarations and explicit ended states, takes the latest such state per disease and therefore
 does not change when the operator filters the feed or changes the history window.
 
+## R&D Blueprint evidence
+
+Blueprint content is not an outbreak event and never enters the event feed or map. The dedicated
+daily adapter stores it in `countermeasure_evidence`, keyed by curated pathogen-family identity,
+artifact kind and canonical WHO URL. It reads the current WHO Blueprint team page plus canonical
+priority-framework, roadmap, TPP/PPC and trial-protocol pages, and discovers matching official WHO
+publication links from the team page.
+
+The Blueprint source is a logical collection of independently updated pages. Its daily poll does
+not treat a conditional `304` from the team landing page as proof that the roadmap or TPP pages are
+unchanged; each allow-listed evidence page is revalidated during that poll.
+
+The family/prototype mapping is a small reviewed taxonomy derived from WHO's 2024 prioritization
+framework. Event-to-profile linkage uses the same deterministic disease aliases as normalization.
+Artifact kinds are asserted from a concrete publication title or structured TPP/PPC link, not from
+incidental words in the document body. Stored fields are pathogen family, artifact kind, label,
+canonical URL, `published/in_development/reference` status, WHO publication date when stated, and
+REDLINE's independent last-check timestamp. There is no inferred product availability or readiness
+score. A successful refresh marks links absent from the current official pages inactive without
+deleting their provenance rows. Inspector, JSON/Markdown export and explicit Gemini context consume
+the same normalized active rows.
+
 WHO DON is a JavaScript-rendered index. Its adapter queries WHO's own allow-listed OData endpoint
 for canonical DON identifiers, then downloads the corresponding WHO pages. A page's official
 description metadata becomes the event summary while the cleaned article remains available to the

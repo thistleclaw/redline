@@ -24,6 +24,7 @@ class SyncReport:
     documents_added: int = 0
     events_added: int = 0
     alerts_added: int = 0
+    artifacts_added: int = 0
     skipped: bool = False
     unchanged: bool = False
     error: str | None = None
@@ -167,6 +168,7 @@ class SyncService:
                 context={
                     "documents_added": report.documents_added,
                     "events_added": report.events_added,
+                    "artifacts_added": report.artifacts_added,
                 },
             )
             return report
@@ -184,24 +186,36 @@ class SyncService:
     async def _ingest(
         self, adapter: OfficialSourceAdapter, documents: list[SourceDocument], was_seen: bool
     ) -> SyncReport:
-        documents_added = events_added = alerts_added = 0
+        documents_added = events_added = alerts_added = artifacts_added = 0
+        active_artifacts: set[str] = set()
         for original in documents:
             document = await self.translator.document(original)
             cache_path = self._write_document_cache(document)
             document_id, inserted = self.database.save_document(document, cache_path)
             documents_added += int(inserted)
+            extract_countermeasures = getattr(adapter, "extract_countermeasures", lambda _doc: ())
+            for evidence in extract_countermeasures(document):
+                active_artifacts.add(self.database.countermeasure_evidence_id(evidence))
+                artifacts_added += int(
+                    self.database.save_countermeasure_evidence(evidence, document_id)
+                )
             for event in adapter.extract_events(document):
                 is_new = self.database.save_event(event, document_id)
                 events_added += int(is_new)
                 if is_new and self._should_alert(event, was_seen):
                     reason = self._alert_reason(event)
                     alerts_added += int(self.database.create_alert(event.event_id, reason))
+        if adapter.spec.source_id == "who_blueprint":
+            self.database.reconcile_countermeasure_evidence(
+                adapter.spec.source_id, active_artifacts
+            )
         return SyncReport(
             source_id=adapter.spec.source_id,
             fetched=len(documents),
             documents_added=documents_added,
             events_added=events_added,
             alerts_added=alerts_added,
+            artifacts_added=artifacts_added,
         )
 
     def _write_document_cache(self, document: SourceDocument) -> str:

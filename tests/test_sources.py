@@ -15,7 +15,9 @@ from redline.sources import (
     SourceSpec,
     WHODiseaseOutbreakNewsAdapter,
     WHOHealthEmergencyDashboardAdapter,
+    WHORDBlueprintAdapter,
     make_adapters,
+    spec_by_id,
 )
 
 
@@ -412,3 +414,42 @@ async def test_paho_source_uses_the_specialized_adapter():
         adapters = make_adapters(client, enabled=["paho_alerts"])
         assert len(adapters) == 1
         assert isinstance(adapters[0], PAHOAlertsAdapter)
+
+
+@pytest.mark.asyncio
+async def test_blueprint_adapter_fetches_canonical_pages_and_structured_tpp_links():
+    spec = spec_by_id("who_blueprint")
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        title = "WHO R&D Blueprint"
+        body = "Official WHO Blueprint reference."
+        if "links-to-who-tpps" in request.url.path:
+            title = "Links to WHO TPPs and PPCs"
+            body = (
+                '<a href="/publications/m/item/who-target-product-profiles-for-mers-cov-vaccines">'
+                "WHO MERS coronavirus vaccines TPP</a>"
+            )
+        return httpx.Response(
+            200,
+            text=(
+                f'<html><div class="dynamic-content__date">3 March 2026</div>'
+                f"<main><h1>{title}</h1><p>{body}</p></main></html>"
+            ),
+            headers={"content-type": "text/html"},
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        adapter = WHORDBlueprintAdapter(spec, client)
+        documents, response = await adapter.fetch(etag='"root-only"')
+
+    assert response.status_code == 200
+    assert "if-none-match" not in requests[0].headers
+    assert adapter.extract_events(documents[0]) == []
+    assert documents[0].published_at.isoformat().startswith("2026-03-03")
+    linked = next(
+        document for document in documents if "mers-cov-vaccines" in document.canonical_url
+    )
+    evidence = adapter.extract_countermeasures(linked)
+    assert [(item.pathogen_key, item.kind) for item in evidence] == [("mers_sars", "vaccines")]

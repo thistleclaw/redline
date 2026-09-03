@@ -287,6 +287,9 @@ def monitor_context(
         "event_count": len(events),
         "events": events,
         "sources": jsonable(database.source_health()),
+        "countermeasure_evidence": jsonable(
+            [dict(row) for row in database.all_countermeasure_evidence()]
+        ),
         "constraints": [
             "The radar is informational, not medical advice.",
             "Official feeds may be incomplete or stale.",

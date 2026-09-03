@@ -30,13 +30,14 @@ from redline.ai import (
     ingest_test_scenario,
     monitor_context,
 )
-from redline.aliases import BLUEPRINT_EVIDENCE, disease_by_key
+from redline.aliases import disease_by_key
 from redline.config import Config, config_path, data_dir
 from redline.database import Database
 from redline.geography import REGION_BOUNDS, find_place
 from redline.i18n import COMMANDS, command_help, normalize_language, tr
 from redline.map_render import BrailleMapRenderer, event_points
 from redline.models import utcnow
+from redline.rd import WHO_PRIORITY_FRAMEWORK, blueprint_profile
 from redline.reports import change_brief, who_guidance, write_export
 from redline.secrets import SecretStoreError, clear_gemini_api_key, save_gemini_api_key
 from redline.services import DocumentViewer, SyncService
@@ -429,6 +430,7 @@ class RedlineApp(App[None]):
         self.refresh_view()
         errors = [report for report in reports if report.error]
         added = sum(report.events_added for report in reports)
+        artifacts = sum(report.artifacts_added for report in reports)
         alerts = sum(report.alerts_added for report in reports)
         if errors:
             self.query_one("#details", Static).update(
@@ -438,7 +440,13 @@ class RedlineApp(App[None]):
             )
         else:
             self.query_one("#details", Static).update(
-                tr(self.config.language, "sync.done", events=added, alerts=alerts)
+                tr(
+                    self.config.language,
+                    "sync.done",
+                    events=added,
+                    artifacts=artifacts,
+                    alerts=alerts,
+                )
                 + "\n\n"
                 + change_brief(self.database, language=self.config.language)
             )
@@ -585,15 +593,61 @@ class RedlineApp(App[None]):
         text.append("\n" + excerpt[:900] + "\n", style="#cbd5e1")
         disease = disease_by_key(row["disease_key"])
         if disease and disease.blueprint_key:
-            evidence = BLUEPRINT_EVIDENCE.get(disease.blueprint_key, ())
-            if evidence:
-                text.append(
-                    "\n" + tr(self.config.language, "rd.heading") + "\n", style="bold #60a5fa"
-                )
-                for kind, label, _url in evidence:
-                    text.append(f"{kind}: {label}\n", style="#93c5fd")
+            self._append_rd_profile(text, disease.blueprint_key)
         text.append("\n" + tr(self.config.language, "selected.actions"), style="#60a5fa")
         return text
+
+    def _append_rd_profile(self, text: Text, pathogen_key: str) -> None:
+        profile = blueprint_profile(pathogen_key)
+        if profile is None:
+            return
+        evidence = self.database.countermeasure_evidence(pathogen_key)
+        by_kind = {}
+        for row in evidence:
+            by_kind.setdefault(str(row["kind"]), row)
+        updates = [str(row["published_at"]) for row in evidence if row["published_at"]]
+        checks = [str(row["last_seen"]) for row in evidence if row["last_seen"]]
+        last_update = max(updates)[:10] if updates else tr(self.config.language, "rd.not_stated")
+        last_checked = max(checks)[:10] if checks else tr(self.config.language, "rd.not_synced")
+        prototype_status = (
+            "WHO 2024"
+            if "prototype_pathogen" in by_kind
+            else tr(self.config.language, "rd.catalogued")
+        )
+
+        text.append("\n" + tr(self.config.language, "rd.heading") + "\n", style="bold #60a5fa")
+        text.append(
+            f"{tr(self.config.language, 'rd.family')}: {profile.family}\n",
+            style="bold #bfdbfe",
+        )
+        text.append(
+            f"{tr(self.config.language, 'rd.prototype')}: "
+            f"{', '.join(profile.prototype_pathogens)} [{prototype_status}]\n",
+            style="#93c5fd",
+        )
+        text.append(f"  {WHO_PRIORITY_FRAMEWORK}\n", style="#475569")
+        text.append(f"{tr(self.config.language, 'rd.updated')}: {last_update}\n", style="#94a3b8")
+        text.append(f"{tr(self.config.language, 'rd.checked')}: {last_checked}\n", style="#94a3b8")
+        for kind in (
+            "roadmap",
+            "diagnostics",
+            "vaccines",
+            "therapeutics",
+            "clinical_protocols",
+        ):
+            label = tr(self.config.language, f"rd.{kind}")
+            row = by_kind.get(kind)
+            if row is None:
+                text.append(f"{label}: —\n", style="#475569")
+                continue
+            status = tr(self.config.language, f"rd.status.{row['status']}")
+            text.append(f"{label}: [{status}] {row['label']}\n", style="#93c5fd")
+            text.append(f"  {row['url']}\n", style="#475569")
+        if not evidence:
+            text.append(
+                tr(self.config.language, "rd.sync_hint") + "\n",
+                style="#64748b",
+            )
 
     def _localized_title(self, row) -> str:
         return str(

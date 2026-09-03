@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 
 import httpx
 import pytest
@@ -16,6 +17,7 @@ from redline.ai import (
 )
 from redline.config import Config
 from redline.database import Database
+from redline.models import CountermeasureEvidence
 
 
 @pytest.mark.asyncio
@@ -102,6 +104,26 @@ def test_monitor_context_contains_normalized_events_not_full_documents(tmp_path,
     database = Database(tmp_path / "redline.sqlite3")
     document_id, _ = database.save_document(document)
     database.save_event(event, document_id)
+    rd_document = replace(
+        document,
+        source_id="who_blueprint",
+        canonical_url="https://www.who.int/publications/m/item/filovirus-roadmap",
+        content_hash="rd-document",
+    )
+    rd_document_id, _ = database.save_document(rd_document)
+    database.save_countermeasure_evidence(
+        CountermeasureEvidence(
+            pathogen_key="filoviruses",
+            pathogen_family="Filoviridae",
+            kind="roadmap",
+            label="Filovirus R&D roadmap",
+            url=rd_document.canonical_url,
+            status="published",
+            published_at=rd_document.published_at,
+            checked_at=rd_document.fetched_at,
+        ),
+        rd_document_id,
+    )
 
     payload = json.loads(
         monitor_context(
@@ -117,6 +139,7 @@ def test_monitor_context_contains_normalized_events_not_full_documents(tmp_path,
     assert payload["events"][0]["source_url"] == document.canonical_url
     assert payload["events"][0]["map_scope"] == "local"
     assert "original_text" not in payload["events"][0]
+    assert payload["countermeasure_evidence"][0]["pathogen_family"] == "Filoviridae"
 
 
 @pytest.mark.asyncio

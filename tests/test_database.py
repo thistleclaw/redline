@@ -5,7 +5,7 @@ from dataclasses import replace
 from datetime import timedelta
 
 from redline.database import Database
-from redline.models import EmergencyStatus, utcnow
+from redline.models import CountermeasureEvidence, EmergencyStatus, utcnow
 
 
 def test_documents_are_versioned_events_keep_provenance(tmp_path, document, event):
@@ -143,6 +143,43 @@ def test_active_pheic_count_deduplicates_updates_and_uses_latest_explicit_state(
         ended_id,
     )
     assert database.active_pheic_count() == 0
+
+
+def test_countermeasure_evidence_is_normalized_deduplicated_and_exported(tmp_path, document):
+    database = Database(tmp_path / "redline.sqlite3")
+    rd_document = replace(
+        document,
+        source_id="who_blueprint",
+        canonical_url="https://www.who.int/publications/m/item/filovirus-roadmap",
+        content_hash="filovirus-roadmap",
+        category="rd_blueprint",
+    )
+    document_id, _ = database.save_document(rd_document)
+    evidence = CountermeasureEvidence(
+        pathogen_key="filoviruses",
+        pathogen_family="Filoviridae",
+        kind="roadmap",
+        label="Filovirus research and development roadmap",
+        url=rd_document.canonical_url,
+        status="published",
+        published_at=rd_document.published_at,
+        checked_at=rd_document.fetched_at,
+    )
+
+    assert database.save_countermeasure_evidence(evidence, document_id)
+    assert not database.save_countermeasure_evidence(evidence, document_id)
+    row = database.countermeasure_evidence("filoviruses")[0]
+
+    assert row["pathogen_family"] == "Filoviridae"
+    assert row["status"] == "published"
+    assert database.export_payload()["countermeasure_evidence"][0]["url"] == evidence.url
+
+    database.reconcile_countermeasure_evidence("who_blueprint", set())
+
+    assert database.countermeasure_evidence("filoviruses") == []
+    assert (
+        database.connection.execute("SELECT active FROM countermeasure_evidence").fetchone()[0] == 0
+    )
 
 
 def test_history_query_limits_events_by_occurrence_time(tmp_path, document, event):

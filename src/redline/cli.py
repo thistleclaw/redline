@@ -38,7 +38,9 @@ def main(argv: list[str] | None = None) -> None:
         database.close()
         for report in reports:
             print(
-                f"{report.source_id}: fetched={report.fetched} events={report.events_added} alerts={report.alerts_added} error={report.error or '-'}"
+                f"{report.source_id}: fetched={report.fetched} events={report.events_added} "
+                f"artifacts={report.artifacts_added} alerts={report.alerts_added} "
+                f"error={report.error or '-'}"
             )
         return
     if args.subcommand == "export":

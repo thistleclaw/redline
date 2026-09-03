@@ -19,12 +19,18 @@ from bs4 import BeautifulSoup
 from redline.aliases import find_disease
 from redline.geography import find_place
 from redline.models import (
+    CountermeasureEvidence,
     EmergencyStatus,
     Event,
     EvidenceStatus,
     LocationPrecision,
     SourceDocument,
     utcnow,
+)
+from redline.rd import (
+    WHO_BLUEPRINT_DOCUMENTS,
+    WHO_TPP_DIRECTORY,
+    extract_countermeasure_evidence,
 )
 
 USER_AGENT = "REDLINE/0.1 (+https://github.com/thistleclaw/redline; local-first monitoring)"
@@ -115,12 +121,12 @@ SPECS: tuple[SourceSpec, ...] = (
     SourceSpec(
         "who_blueprint",
         "WHO R&D Blueprint",
-        "https://www.who.int/activities/prioritizing-diseases-for-research-and-development-in-emergency-contexts/prioritizing-diseases-for-research-and-development-in-emergency-contexts",
+        WHO_BLUEPRINT_DOCUMENTS[0],
         "rd_blueprint",
         timedelta(days=1),
         ("www.who.int",),
         ("/who-r-d-blueprint/", "/prioritizing-diseases/"),
-        max_documents=4,
+        max_documents=len(WHO_BLUEPRINT_DOCUMENTS),
         allow_index_document=True,
     ),
 )
@@ -493,6 +499,11 @@ class OfficialSourceAdapter:
             )
         ]
 
+    def extract_countermeasures(
+        self, document: SourceDocument
+    ) -> tuple[CountermeasureEvidence, ...]:
+        return ()
+
     @staticmethod
     def _region_from_text(text: str) -> str | None:
         if "americas" in text or "america region" in text:
@@ -605,6 +616,135 @@ class ECDCCDTRAdapter(OfficialSourceAdapter):
                 emergency=EmergencyStatus.NONE,
             )
         ]
+
+
+class WHORDBlueprintAdapter(OfficialSourceAdapter):
+    """Fetch canonical WHO Blueprint evidence pages; never emit them as outbreaks."""
+
+    async def fetch(
+        self, etag: str | None = None, last_modified: str | None = None
+    ) -> tuple[list[SourceDocument], httpx.Response]:
+        headers = {"User-Agent": USER_AGENT, "Accept": "text/html,application/xhtml+xml"}
+        # This logical source spans several independently updated WHO pages. A root-page 304
+        # cannot prove that the TPP directory or a roadmap page is unchanged, so the daily
+        # Blueprint poll intentionally revalidates every canonical evidence page.
+        root_response = await self.request(self.spec.index_url, headers)
+
+        documents: list[SourceDocument] = []
+        root_soup = BeautifulSoup(root_response.text, "html.parser")
+        for url in WHO_BLUEPRINT_DOCUMENTS:
+            try:
+                response = (
+                    root_response
+                    if url == self.spec.index_url
+                    else await self.request(url, {"User-Agent": USER_AGENT})
+                )
+            except (httpx.HTTPError, SourceError):
+                continue
+            soup = BeautifulSoup(response.text, "html.parser")
+            title = compact_text(
+                soup.select_one("h1") or soup.title or self.spec.publisher, limit=300
+            )
+            published = self._page_date(soup, compact_text(soup, limit=3000))
+            body, excerpt = self._clean_page(soup)
+            documents.append(
+                self._document(
+                    title,
+                    url,
+                    body,
+                    published,
+                    excerpt=excerpt,
+                )
+            )
+            if url == WHO_TPP_DIRECTORY:
+                documents.extend(self._tpp_link_documents(soup, url))
+        documents.extend(await self._dynamic_artifact_documents(root_soup))
+        return documents, root_response
+
+    async def _dynamic_artifact_documents(self, soup: BeautifulSoup) -> list[SourceDocument]:
+        candidates: list[SourceDocument] = []
+        seen = set(WHO_BLUEPRINT_DOCUMENTS)
+        for anchor in soup.select("a[href]"):
+            label = compact_text(anchor, limit=300)
+            url = urljoin(self.spec.index_url, str(anchor.get("href") or ""))
+            if not label or url in seen:
+                continue
+            try:
+                self.validate_url(url)
+            except SourceError:
+                continue
+            link_document = self._document(label, url, label, None, excerpt=label)
+            if not extract_countermeasure_evidence(link_document):
+                continue
+            seen.add(url)
+            try:
+                response = await self.request(url, {"User-Agent": USER_AGENT})
+                page = BeautifulSoup(response.text, "html.parser")
+                title = compact_text(page.select_one("h1") or page.title or label, limit=300)
+                published = self._page_date(page, compact_text(page, limit=3000))
+                body, excerpt = self._clean_page(page)
+                candidates.append(
+                    self._document(
+                        title,
+                        url,
+                        body,
+                        published,
+                        excerpt=excerpt,
+                    )
+                )
+            except (httpx.HTTPError, SourceError):
+                candidates.append(link_document)
+            if len(candidates) >= 16:
+                break
+        return candidates
+
+    @classmethod
+    def _page_date(cls, soup: BeautifulSoup, body: str) -> str | None:
+        visible_date = soup.select_one(
+            ".dynamic-content__date, .timestamp, .date, [class*='publication-date']"
+        )
+        if visible_date:
+            parsed = cls._find_date(compact_text(visible_date, limit=120))
+            if parsed:
+                return parsed
+        for selector, attribute in (
+            ('meta[property="article:published_time"]', "content"),
+            ('meta[name="date"]', "content"),
+            ('meta[itemprop="datePublished"]', "content"),
+            ("time[datetime]", "datetime"),
+        ):
+            node = soup.select_one(selector)
+            if node and node.get(attribute):
+                return str(node.get(attribute))
+        return cls._find_date(body)
+
+    def _tpp_link_documents(self, soup: BeautifulSoup, directory_url: str) -> list[SourceDocument]:
+        documents: list[SourceDocument] = []
+        seen: set[str] = set()
+        for anchor in soup.select("a[href]"):
+            label = compact_text(anchor, limit=300)
+            if not label or not re.search(r"\b(?:TPP|PPC)s?\b", label, re.IGNORECASE):
+                continue
+            url = urljoin(directory_url, str(anchor.get("href") or ""))
+            try:
+                self.validate_url(url)
+            except SourceError:
+                continue
+            if url in seen:
+                continue
+            seen.add(url)
+            document = self._document(label, url, label, self._find_date(label), excerpt=label)
+            if extract_countermeasure_evidence(document):
+                documents.append(document)
+        return documents
+
+    def extract_events(self, document: SourceDocument) -> list[Event]:
+        return []
+
+    def extract_countermeasures(
+        self, document: SourceDocument
+    ) -> tuple[CountermeasureEvidence, ...]:
+        return extract_countermeasure_evidence(document)
 
 
 class PAHOAlertsAdapter(OfficialSourceAdapter):
@@ -780,6 +920,8 @@ def make_adapters(
         if spec.source_id == "ecdc_cdtr"
         else PAHOAlertsAdapter(spec, client)
         if spec.source_id == "paho_alerts"
+        else WHORDBlueprintAdapter(spec, client)
+        if spec.source_id == "who_blueprint"
         else WHOHealthEmergencyDashboardAdapter(spec, client)
         if spec.source_id == "who_hed"
         else OfficialSourceAdapter(spec, client)

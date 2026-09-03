@@ -8,7 +8,14 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from redline.config import data_dir
-from redline.models import Event, SourceDocument, SourceHealth, jsonable, utcnow
+from redline.models import (
+    CountermeasureEvidence,
+    Event,
+    SourceDocument,
+    SourceHealth,
+    jsonable,
+    utcnow,
+)
 
 
 def _iso(value: datetime | None) -> str | None:
@@ -66,6 +73,23 @@ class Database:
             );
             CREATE INDEX IF NOT EXISTS source_documents_url_idx
                 ON source_documents(canonical_url);
+            CREATE TABLE IF NOT EXISTS countermeasure_evidence (
+                evidence_id TEXT PRIMARY KEY,
+                source_document_id TEXT NOT NULL REFERENCES source_documents(document_id),
+                source_id TEXT NOT NULL,
+                pathogen_key TEXT NOT NULL,
+                pathogen_family TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                label TEXT NOT NULL,
+                url TEXT NOT NULL,
+                status TEXT NOT NULL,
+                published_at TEXT,
+                last_seen TEXT NOT NULL,
+                active INTEGER NOT NULL DEFAULT 1,
+                UNIQUE(pathogen_key, kind, url)
+            );
+            CREATE INDEX IF NOT EXISTS countermeasure_pathogen_idx
+                ON countermeasure_evidence(pathogen_key, kind, published_at DESC);
             CREATE TABLE IF NOT EXISTS situations (
                 situation_key TEXT PRIMARY KEY,
                 first_seen TEXT NOT NULL,
@@ -129,6 +153,16 @@ class Database:
         if "map_scope" not in event_columns:
             self.connection.execute(
                 "ALTER TABLE events ADD COLUMN map_scope TEXT NOT NULL DEFAULT 'local'"
+            )
+        evidence_columns = {
+            row["name"]
+            for row in self.connection.execute(
+                "PRAGMA table_info(countermeasure_evidence)"
+            ).fetchall()
+        }
+        if "active" not in evidence_columns:
+            self.connection.execute(
+                "ALTER TABLE countermeasure_evidence ADD COLUMN active INTEGER NOT NULL DEFAULT 1"
             )
         self.connection.commit()
 
@@ -364,6 +398,67 @@ class Database:
         self.connection.commit()
         return not bool(existing)
 
+    def save_countermeasure_evidence(
+        self, evidence: CountermeasureEvidence, document_id: str
+    ) -> bool:
+        evidence_id = self.countermeasure_evidence_id(evidence)
+        existed = self.connection.execute(
+            "SELECT 1 FROM countermeasure_evidence WHERE evidence_id = ?", (evidence_id,)
+        ).fetchone()
+        self.connection.execute(
+            """
+            INSERT INTO countermeasure_evidence(
+              evidence_id, source_document_id, source_id, pathogen_key, pathogen_family,
+              kind, label, url, status, published_at, last_seen, active
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+            ON CONFLICT(evidence_id) DO UPDATE SET
+              source_document_id = excluded.source_document_id,
+              pathogen_family = excluded.pathogen_family,
+              label = excluded.label,
+              status = excluded.status,
+              published_at = COALESCE(excluded.published_at, published_at),
+              last_seen = excluded.last_seen,
+              active = 1
+            """,
+            (
+                evidence_id,
+                document_id,
+                evidence.source_id,
+                evidence.pathogen_key,
+                evidence.pathogen_family,
+                evidence.kind,
+                evidence.label,
+                evidence.url,
+                evidence.status,
+                _iso(evidence.published_at),
+                _iso(evidence.checked_at),
+            ),
+        )
+        self.connection.commit()
+        return not bool(existed)
+
+    @staticmethod
+    def countermeasure_evidence_id(evidence: CountermeasureEvidence) -> str:
+        return hashlib.sha256(
+            f"{evidence.pathogen_key}|{evidence.kind}|{evidence.url}".encode()
+        ).hexdigest()[:32]
+
+    def reconcile_countermeasure_evidence(
+        self, source_id: str, active_evidence_ids: set[str]
+    ) -> None:
+        with self.connection:
+            self.connection.execute(
+                "UPDATE countermeasure_evidence SET active = 0 WHERE source_id = ?",
+                (source_id,),
+            )
+            if active_evidence_ids:
+                placeholders = ",".join("?" for _ in active_evidence_ids)
+                self.connection.execute(
+                    f"UPDATE countermeasure_evidence SET active = 1 "
+                    f"WHERE source_id = ? AND evidence_id IN ({placeholders})",
+                    (source_id, *sorted(active_evidence_ids)),
+                )
+
     def create_alert(self, event_id: str, reason: str) -> bool:
         existing = self.connection.execute(
             "SELECT 1 FROM alerts WHERE event_id = ? AND reason = ?", (event_id, reason)
@@ -522,6 +617,38 @@ class Database:
         params.append(max(1, min(limit, 1000)))
         return self.connection.execute(query, params).fetchall()
 
+    def countermeasure_evidence(self, pathogen_key: str) -> list[sqlite3.Row]:
+        return self.connection.execute(
+            """
+            SELECT * FROM countermeasure_evidence
+            WHERE pathogen_key = ? AND active = 1
+            ORDER BY
+              CASE kind
+                WHEN 'roadmap' THEN 1
+                WHEN 'prototype_pathogen' THEN 2
+                WHEN 'diagnostics' THEN 3
+                WHEN 'vaccines' THEN 4
+                WHEN 'therapeutics' THEN 5
+                WHEN 'clinical_protocols' THEN 6
+                ELSE 7
+              END,
+              CASE status
+                WHEN 'published' THEN 1
+                WHEN 'in_development' THEN 2
+                ELSE 3
+              END,
+              CASE WHEN published_at IS NULL THEN 1 ELSE 0 END,
+              published_at DESC, last_seen DESC, label
+            """,
+            (pathogen_key,),
+        ).fetchall()
+
+    def all_countermeasure_evidence(self) -> list[sqlite3.Row]:
+        return self.connection.execute(
+            "SELECT * FROM countermeasure_evidence WHERE active = 1 "
+            "ORDER BY pathogen_key, kind, COALESCE(published_at, last_seen) DESC"
+        ).fetchall()
+
     def audit_entries(self, limit: int = 80) -> list[sqlite3.Row]:
         return self.connection.execute(
             "SELECT * FROM audit_log ORDER BY audit_id DESC LIMIT ?", (limit,)
@@ -580,4 +707,7 @@ class Database:
             "notice": "Informational monitor only. Not medical advice or a complete registry.",
             "events": jsonable(events),
             "sources": jsonable(self.source_health()),
+            "countermeasure_evidence": jsonable(
+                [dict(row) for row in self.all_countermeasure_evidence()]
+            ),
         }

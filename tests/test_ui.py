@@ -8,6 +8,7 @@ import pytest
 from redline.ai import GeminiResult
 from redline.config import Config
 from redline.database import Database
+from redline.models import CountermeasureEvidence
 from redline.ui import RedlineApp, markdown_to_plain_text, parse_timelapse_duration
 
 
@@ -165,6 +166,51 @@ async def test_tui_renders_map_commands_and_export(tmp_path, document, event):
         assert app.focus == "africa"
         app.execute_command(f":export json {export_path}")
         assert export_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_inspector_links_outbreak_to_structured_blueprint_profile(tmp_path, document, event):
+    database = Database(tmp_path / "redline.sqlite3")
+    event_document_id, _ = database.save_document(document)
+    database.save_event(event, event_document_id)
+    rd_document = replace(
+        document,
+        source_id="who_blueprint",
+        canonical_url="https://www.who.int/publications/m/item/filovirus-roadmap",
+        content_hash="filovirus-roadmap",
+        title="Filovirus research and development roadmap",
+        category="rd_blueprint",
+    )
+    rd_document_id, _ = database.save_document(rd_document)
+    database.save_countermeasure_evidence(
+        CountermeasureEvidence(
+            pathogen_key="filoviruses",
+            pathogen_family="Filoviridae",
+            kind="roadmap",
+            label=rd_document.title,
+            url=rd_document.canonical_url,
+            status="published",
+            published_at=rd_document.published_at,
+            checked_at=rd_document.fetched_at,
+        ),
+        rd_document_id,
+    )
+    app = RedlineApp(
+        config=Config(
+            initialized=True, language="ru", crt_effects=False, translation_enabled=False
+        ),
+        database=database,
+    )
+
+    async with app.run_test(size=(150, 45)) as pilot:
+        await pilot.pause()
+        inspector = app.query_one("#details").renderable.plain
+
+        assert "R&D BLUEPRINT // профиль контрмер WHO" in inspector
+        assert "Семейство: Filoviridae" in inspector
+        assert "Прототип: Orthoebolavirus zairense" in inspector
+        assert "Roadmap: [ОПУБЛИКОВАНО] Filovirus research" in inspector
+        assert "Диагностика: —" in inspector
 
 
 @pytest.mark.asyncio

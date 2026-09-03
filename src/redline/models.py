@@ -88,9 +88,13 @@ class Event:
 @dataclass(frozen=True, slots=True)
 class CountermeasureEvidence:
     pathogen_key: str
+    pathogen_family: str
     kind: str
     label: str
     url: str
+    status: str
+    published_at: datetime | None
+    checked_at: datetime
     source_id: str = "who_blueprint"
 
 

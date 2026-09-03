@@ -114,6 +114,13 @@ WHO situation reports and Health Emergency Dashboard, CDC Outbreaks, ECDC CDTR, 
 epidemiological alerts, Africa CDC event-based surveillance reports, and WHO R&D Blueprint
 pages. Source-specific freshness and errors are visible in the TUI.
 
+The WHO R&D Blueprint adapter maintains a separate countermeasure-evidence layer. An outbreak with
+a curated pathogen alias is linked to its WHO-2024 pathogen family and prototype pathogen, then to
+the latest synchronized roadmap, diagnostic, vaccine, therapeutic and clinical-protocol documents.
+Publication date and REDLINE's last-check date are shown separately. Missing categories remain `—`;
+REDLINE never converts a passing mention inside a roadmap into product evidence and calculates no
+readiness score. Run `:sync who_blueprint` to refresh this layer.
+
 Generic extraction is deliberately conservative and sentence-scoped. A bare mention of PHEIC or
 the word “confirmed” is not sufficient: explicit current assertions are required, while negated,
 ended, and clearly historical statements are handled separately. Disease aliases require token

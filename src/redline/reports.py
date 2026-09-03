@@ -4,8 +4,10 @@ import json
 import re
 from pathlib import Path
 
+from redline.aliases import disease_by_key
 from redline.database import Database
 from redline.i18n import tr
+from redline.rd import blueprint_profile
 
 WHO_SOURCE_IDS = ("who_don", "who_sitreps", "who_hed", "who_blueprint")
 GUIDANCE_PATTERN = re.compile(
@@ -53,9 +55,23 @@ def markdown_brief(
                 f"- Source: {row['source_id']}",
                 f"- Published: {row['published_at'] or 'not stated'}",
                 f"- Original: {row['canonical_url']}",
-                "",
             ]
         )
+        disease = disease_by_key(row["disease_key"])
+        profile = blueprint_profile(disease.blueprint_key if disease else None)
+        if profile:
+            lines.append(f"- R&D family: {profile.family}")
+            lines.append(f"- Prototype pathogen: {', '.join(profile.prototype_pathogens)}")
+            seen_kinds: set[str] = set()
+            for artifact in database.countermeasure_evidence(profile.key):
+                kind = str(artifact["kind"])
+                if kind == "prototype_pathogen" or kind in seen_kinds:
+                    continue
+                seen_kinds.add(kind)
+                lines.append(
+                    f"- R&D {kind}: `{artifact['status']}` [{artifact['label']}]({artifact['url']})"
+                )
+        lines.append("")
     return "\n".join(lines)
 
 
