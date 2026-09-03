@@ -1,134 +1,155 @@
 # REDLINE
 
-REDLINE is a local-first epidemiological radar for Linux true-color terminals. It presents
-official public-health sources as a Russian/English Textual TUI: a Braille world map,
-event stream, source provenance, PHEIC status, R&D Blueprint context, a document viewer and
-a persistent command line.
+**Русский** · [English](README.en.md)
 
-It is an information monitor, not medical advice, a forecast, or a complete event registry.
-All alerts remain attributable to an official source. REDLINE does not send telemetry or
-crash reports. When translation is enabled, document titles and excerpts are sent to Google
-Translate through the lightweight, unofficial `googletrans` client; no translation model or
-language package is downloaded. The original text and source attribution always remain available,
-and a translation error or rate limit preserves the original English text. Gemini is contacted
-only after an explicit AI command.
+![REDLINE — синтетическая демонстрация распространения](docs/screenshots/redline-spread.png)
 
-## Install
+REDLINE — локальный эпидемиологический радар для Linux-терминалов с true color.
+Полноэкранный Textual TUI объединяет официальные источники общественного здравоохранения,
+адаптивную карту мира из Unicode Braille, поток событий, статусы PHEIC, материалы WHO R&D
+Blueprint, историю и встроенный просмотр документов.
 
-Install directly from GitHub:
+> REDLINE — информационный монитор, а не медицинская рекомендация, прогноз или полный реестр
+> угроз. События из рабочего режима всегда сохраняют ссылку на официальный первоисточник.
+
+## Возможности
+
+- Адаптивная Braille-карта без географического растяжения.
+- Ярко-красные локальные вспышки, тёмно-красные области распространения и серый слой вымирания
+  только в явно синтетических сценариях.
+- WHO Disease Outbreak News, Situation Reports, Health Emergency Dashboard и R&D Blueprint.
+- CDC Outbreaks, ECDC CDTR, PAHO alerts и Africa CDC event-based surveillance.
+- Раздельные статусы PHEIC и региональных чрезвычайных ситуаций.
+- Локальная SQLite-база, audit log, история за 12 месяцев и 30-дневный кэш документов.
+- Русский и английский интерфейс.
+- Перевод EN→RU через лёгкий `googletrans`, без загрузки локальной AI-модели.
+- Явные Gemini-команды для вопросов, аналитических подсказок и изолированных симуляций.
+- Никакой телеметрии и фоновых AI-запросов.
+
+## Установка
+
+Напрямую из GitHub:
 
 ```bash
 pipx install git+https://github.com/thistleclaw/redline.git
-# or
+# или
 uv tool install git+https://github.com/thistleclaw/redline.git
 ```
 
-For a local checkout:
+Из локального checkout:
 
 ```bash
+git clone https://github.com/thistleclaw/redline.git
+cd redline
 pipx install .
-# or
-uv tool install .
 ```
 
-For optional PDF text extraction:
+Дополнительное локальное извлечение текста из PDF:
 
 ```bash
 pipx install '.[documents]'
 ```
 
-Run `redline`. The first run opens a short local setup. Configuration is kept in
-`~/.config/redline/config.toml`; SQLite data are kept in `~/.local/share/redline/`.
-Set `translation_enabled = false` in the `[app]` section to keep all document text local and
-show the English originals only.
+Запуск:
 
-Switch the complete interface immediately with `:language ru` or `:language en`. The choice is
-saved to `config.toml`.
+```bash
+redline
+```
 
-## Gemini setup
+На первом запуске откроется короткая настройка. Конфигурация хранится в
+`~/.config/redline/config.toml`, данные — в `~/.local/share/redline/`.
 
-REDLINE uses Google's Gemini REST API directly. The primary model is
-`gemini-3.5-flash-lite`; `gemini-3.1-flash-lite` is the fallback. The API key can be stored in
-REDLINE's dedicated local secret file or supplied through an environment variable. It is never
-written to the regular configuration, database or audit log.
+## Управление
 
-The easiest persistent setup uses a hidden terminal prompt:
+- `PgUp` / `PgDown` — циклический переход между Потоком, Инспектором и командной строкой.
+- `↑` / `↓` — выбор событий или прокрутка активной панели.
+- В командной строке `↑` / `↓` листают постоянную историю последних 200 команд.
+- `Enter` — открыть выбранный документ или выполнить команду.
+- `Escape` — закрыть viewer.
+
+Основные команды:
+
+```text
+:language ru|en
+:focus <регион>
+:filter key=value
+:sync [source]
+:history [days]
+:brief
+:export json|markdown [path]
+:log
+:settings
+:help
+:exit
+```
+
+## Gemini
+
+REDLINE обращается к Gemini только после явной AI-команды. Основная модель —
+`gemini-3.5-flash-lite`, резервная — `gemini-3.1-flash-lite`.
+
+Безопасно сохранить ключ через маскированный ввод:
 
 ```bash
 redline auth
 ```
 
-The key is stored at `~/.config/redline/gemini.key`; the directory is mode `0700` and the key file
-is mode `0600`. Inside the TUI, `:auth` opens a masked editor that can save or remove the same key
-without restarting REDLINE. `redline auth --clear` removes it from the terminal. This is a local
-plain-text secret protected by Unix file permissions, not an encrypted desktop keyring; processes
-running as the same OS user can read it.
+Внутри TUI доступна команда `:auth`. Ключ хранится отдельно в
+`~/.config/redline/gemini.key` с правами `0600`; он не записывается в SQLite, обычную
+конфигурацию или audit log. Также поддерживаются `GEMINI_API_KEY` и `GOOGLE_API_KEY`.
 
-`GEMINI_API_KEY` and `GOOGLE_API_KEY` are also accepted and override the stored key. AI calls are
-not scheduled in the background. An explicit AI command sends the active focus, filters, watch
-regions, source health and up to 1,000 normalized events (including source URLs and summaries
-capped at 700 characters) to Google. Cached complete documents, exports, the SQLite file, local
-paths and audit entries are not sent.
+```text
+:ask ai <вопрос>
+:advice
+:advice ai
+:test
+:test ai <сценарий>
+:test ai timelapse [duration=3y] [speed=1w/1s] <сценарий>
+:test pause|play|step
+:test off
+```
 
-## Commands
+`test`-режим использует отдельную in-memory базу. Синхронизация официальных источников в нём
+отключена, синтетические события явно подписаны, а выход полностью удаляет тестовые данные.
 
-The bottom command line supports:
+## Карта и таймлапс
 
-- `:exit` — close REDLINE cleanly.
-- `:language <ru|en>` — switch and persist the interface language.
-- `:auth` — securely save or remove the persistent Gemini API key using a masked field.
-- `:ask ai <question>` — ask Gemini using the current monitor context.
-- `:advice` — show attributed recommendation excerpts found in locally cached WHO documents; it
-  does not invoke AI.
-- `:advice ai` — ask Gemini for monitoring priorities and data-quality caveats based only on the
-  monitor context. The result is explicitly labelled as AI analysis, not a WHO position or medical
-  advice.
-- `:test` — enter an empty, isolated in-memory test database; synchronization is disabled there.
-- `:test ai <scenario>` — ask Gemini to construct 3–12 explicitly synthetic events and display
-  them on the map. Example: `:test ai глобальная эпидемия сибирской язвы в Евразии`.
-- `:test ai timelapse <scenario>` — generate a synthetic progression up to 520 weeks and play it
-  at one week per second. Add `duration=90d`, `duration=26w`, `duration=18m` or `duration=3y` and
-  `speed=2w/s` or `speed=1w/2s` after `timelapse`; duration and speed may appear in either order.
-- `:test pause`, `:test play`, `:test step` — pause, resume, or advance a timelapse by one week.
-- `:test off` — discard all test events and restore the untouched live database and view state.
-- `:focus`, `:filter`, `:sync`, `:history`, `:brief`, `:export`, `:log`, `:settings` — existing
-  navigation, synchronization and reporting commands.
+![REDLINE — синтетическая глобальная стадия вымирания](docs/screenshots/redline-extinction.png)
 
-Enter `:help` in the TUI for the localized command reference.
+Базовая география — зафиксированный Natural Earth 1:110m v5.1.2. Карта сохраняет единый масштаб
+долготы и широты в сетке Braille 2×4 и автоматически подстраивается под размер терминала.
 
-`PgUp` and `PgDown` move cyclically through the event feed, inspector, and command line;
-the active field has a `▶` marker. In the feed and inspector, `Up` and `Down` navigate or
-scroll the active content. In the command line, `Up` and `Down` browse persistent command
-history (the last 200 commands, stored locally with owner-only permissions).
-In the feed, `Up` and `Down` move between events. In the inspector, the same keys scroll long text
-one line at a time. Commands and opened documents automatically select the inspector.
+- `outbreak` — компактная ярко-красная отметка.
+- `spread` — площадь суши с масштабом `local/country/region/continent/global`; больший масштаб
+  отображается более тёмным красным.
+- `extinction` — серая площадь суши только в синтетическом AI-сценарии. Глобальный масштаб
+  покрывает материки, а не рисует условное пятно вокруг одной координаты.
 
-## Sources
+Контекстные страницы, неизвестные координаты, глобальные сводки, R&D-материалы и широкие
+risk-assessment документы не превращаются в точки вспышек. По официальным данным REDLINE сам
+не делает выводов о вымирании.
 
-REDLINE only contacts enabled, allow-listed official sources: WHO Disease Outbreak News,
-WHO situation reports and Health Emergency Dashboard, CDC Outbreaks, ECDC CDTR, PAHO
-epidemiological alerts, Africa CDC event-based surveillance reports, and WHO R&D Blueprint
-pages. Source-specific freshness and errors are visible in the TUI.
+Таймлапс поддерживает длительность до 520 недель и скорость от нескольких недель за тик до
+медленного покадрового воспроизведения.
 
-PAHO's Pantheon frontend may reject the normal `httpx` transport with HTTP 403. The PAHO adapter
-then retries the same official allow-listed index and document pages through Python's proxy-free
-standard HTTPS transport, validates every final redirect target, caps index responses at 5 MB and
-keeps clean canonical `paho.org/en/documents/...` URLs. No proxy, mirror or third-party feed is used.
+## Источники и приватность
 
-The WHO DON adapter resolves the JavaScript index through WHO's official OData endpoint and then
-fetches each canonical DON page. Page metadata supplies the concise inspector summary; navigation,
-headers, forms and footers are excluded. ECDC ingestion accepts only canonical weekly CDTR report
-paths and treats each CDTR as a multi-threat regional report rather than inventing a point outbreak.
+Сетевой allowlist ограничен выбранными официальными доменами. При ошибке источник получает
+явную отметку устаревания, а последние успешные данные остаются доступны. Исходные документы и
+расхождения между публикациями не теряются при группировке ситуаций.
 
-The Health Emergency Dashboard and Disease Outbreak News are explicitly marked as
-non-exhaustive in the interface. Full documents are cached locally for 30 days only; event
-metadata and provenance are retained for 12 months by default.
+Если включён перевод, `googletrans` отправляет Google только заголовок и краткий фрагмент.
+AI-команды передают Gemini нормализованный контекст монитора, но не SQLite-файл, полный кэш
+документов, exports, локальные пути или audit log. Подробная модель доверия описана в
+[ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-The Braille coastline uses the pinned Natural Earth 1:110m land dataset (v5.1.2). Natural
-Earth map data are public domain. The base geography is rendered in cobalt; geolocated outbreak
-events are separate Braille layers. Bright red is a local outbreak. Synthetic spread stages fill
-the affected land area in progressively darker red at country, region, continent and global scale.
-Grey fills only affected land for an explicit human-population extinction stage; global extinction
-greys the world's landmasses instead of drawing a point or a square. Global dashboards,
-worldwide context pages, unknown locations, R&D context and broad risk-assessment reports never
-become map markers. REDLINE does not infer extinction from official reports.
+## Разработка
+
+```bash
+python -m pip install -e '.[dev,documents]'
+ruff format --check .
+ruff check .
+pytest
+```
+
+Лицензия: [MIT](LICENSE).
