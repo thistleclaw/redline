@@ -1,0 +1,54 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "redline-epivigil"
+version = "0.1.0"
+description = "REDLINE - local-first epidemiological TUI radar"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [{ name = "REDLINE contributors" }]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Healthcare Industry",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Scientific/Engineering :: Medical Science Apps.",
+]
+dependencies = [
+  "beautifulsoup4>=4.12",
+  "googletrans==4.0.2",
+  "httpx>=0.27",
+  "textual>=0.79,<2",
+]
+
+[project.optional-dependencies]
+documents = ["pypdf>=5.0"]
+dev = ["pytest>=8.3", "pytest-asyncio>=0.24", "ruff>=0.8"]
+
+[project.scripts]
+redline = "redline.cli:main"
+
+[project.urls]
+Repository = "https://github.com/thistleclaw/redline"
+Issues = "https://github.com/thistleclaw/redline/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/redline"]
+artifacts = ["src/redline/data/*.geojson"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]  # Long SQL, source URLs and terminal copy remain more readable intact.
