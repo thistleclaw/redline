@@ -34,12 +34,14 @@ Blueprint, историю и встроенный просмотр докуме�
 
 ## Установка
 
+Требуется Python 3.10 или новее.
+
 Напрямую из GitHub:
 
 ```bash
-pipx install git+https://github.com/thistleclaw/redline.git
+pipx install 'git+https://github.com/thistleclaw/redline.git'
 # или
-uv tool install git+https://github.com/thistleclaw/redline.git
+uv tool install 'git+https://github.com/thistleclaw/redline.git'
 ```
 
 Из локального checkout:

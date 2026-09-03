@@ -7,7 +7,7 @@ import time
 import xml.etree.ElementTree as ET
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
 from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin, urlparse
@@ -17,6 +17,7 @@ import httpx
 from bs4 import BeautifulSoup
 
 from redline.aliases import find_disease
+from redline.compat import UTC
 from redline.geography import find_place
 from redline.models import (
     CountermeasureEvidence,

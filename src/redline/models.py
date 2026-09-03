@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from datetime import UTC, datetime
-from enum import StrEnum
+from datetime import datetime
 from typing import Any
+
+from redline.compat import UTC, StrEnum
 
 
 def utcnow() -> datetime:

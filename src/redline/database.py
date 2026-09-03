@@ -4,9 +4,10 @@ import hashlib
 import json
 import sqlite3
 from collections.abc import Iterable
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
+from redline.compat import UTC
 from redline.config import data_dir
 from redline.models import (
     CountermeasureEvidence,

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 import pytest
 
@@ -11,6 +11,8 @@ from redline.models import (
     LocationPrecision,
     SourceDocument,
 )
+
+UTC = timezone.utc
 
 
 @pytest.fixture

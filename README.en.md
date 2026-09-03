@@ -19,12 +19,14 @@ only after an explicit AI command.
 
 ## Install
 
+Python 3.10 or newer is required.
+
 Install directly from GitHub:
 
 ```bash
-pipx install git+https://github.com/thistleclaw/redline.git
+pipx install 'git+https://github.com/thistleclaw/redline.git'
 # or
-uv tool install git+https://github.com/thistleclaw/redline.git
+uv tool install 'git+https://github.com/thistleclaw/redline.git'
 ```
 
 For a local checkout:

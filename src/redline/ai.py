@@ -5,11 +5,12 @@ import json
 import os
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 import httpx
 
+from redline.compat import UTC
 from redline.config import Config
 from redline.database import Database
 from redline.models import (
