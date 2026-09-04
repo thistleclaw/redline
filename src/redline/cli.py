@@ -5,6 +5,7 @@ import asyncio
 import getpass
 from pathlib import Path
 
+from redline import __version__
 from redline.config import Config
 from redline.database import Database
 from redline.reports import write_export
@@ -17,6 +18,7 @@ def parser() -> argparse.ArgumentParser:
     command = argparse.ArgumentParser(
         prog="redline", description="REDLINE local-first epidemiological radar"
     )
+    command.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = command.add_subparsers(dest="subcommand")
     sync = sub.add_parser("sync", help="Synchronize official sources without opening the TUI")
     sync.add_argument("--source")

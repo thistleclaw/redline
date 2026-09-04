@@ -44,6 +44,11 @@ from redline.secrets import SecretStoreError, clear_gemini_api_key, save_gemini_
 from redline.services import DocumentViewer, SyncService
 
 COMMAND_SYNTAXES = tuple(syntax for syntax, _key in COMMANDS)
+COMMAND_COMPLETIONS = (
+    ":forecast ai bad",
+    ":forecast ai good",
+    *COMMAND_SYNTAXES,
+)
 TIMELAPSE_SPEED = re.compile(r"^(\d+)w/(?:([0-9]+(?:\.[0-9]+)?)s|s)$", re.IGNORECASE)
 TIMELAPSE_DURATION = re.compile(r"^(\d+)(d|w|m|y)$", re.IGNORECASE)
 MAX_COMMAND_HISTORY = 200
@@ -101,7 +106,8 @@ class CommandSuggester(Suggester):
         if not value.startswith(":"):
             return None
         return next(
-            (command for command in COMMAND_SYNTAXES if command.startswith(value.casefold())), None
+            (command for command in COMMAND_COMPLETIONS if command.startswith(value.casefold())),
+            None,
         )
 
 

@@ -9,7 +9,12 @@ from redline.ai import GeminiResult
 from redline.config import Config
 from redline.database import Database
 from redline.models import CountermeasureEvidence
-from redline.ui import RedlineApp, markdown_to_plain_text, parse_timelapse_duration
+from redline.ui import (
+    CommandSuggester,
+    RedlineApp,
+    markdown_to_plain_text,
+    parse_timelapse_duration,
+)
 
 
 class FakeGemini:
@@ -116,6 +121,14 @@ def test_gemini_markdown_is_converted_to_terminal_plain_text():
     result = markdown_to_plain_text(source)
 
     assert result == "Heading\n\n• Alert from WHO (https://who.int/a_b)\ncode and note."
+
+
+@pytest.mark.asyncio
+async def test_forecast_autocomplete_exposes_concrete_argument_values():
+    suggester = CommandSuggester()
+
+    assert await suggester.get_suggestion(":forecast ai b") == ":forecast ai bad"
+    assert await suggester.get_suggestion(":forecast ai g") == ":forecast ai good"
 
 
 @pytest.mark.asyncio

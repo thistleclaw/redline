@@ -45,6 +45,7 @@ pipx install '.[documents]'
 
 Run `redline`. The first run opens a short local setup. Configuration is kept in
 `~/.config/redline/config.toml`; SQLite data are kept in `~/.local/share/redline/`.
+Run `redline --version` to verify which pipx build is installed.
 On later launches REDLINE automatically checks sources in the background: due sources are
 updated while fresh sources retain their individual polling intervals.
 Set `translation_enabled = false` in the `[app]` section to keep all document text local and
@@ -95,9 +96,9 @@ The bottom command line supports:
 - `:advice ai` — ask Gemini for monitoring priorities and data-quality caveats based only on the
   monitor context. The result is explicitly labelled as AI analysis, not a WHO position or medical
   advice.
-- `:forecast ai bad` and `:forecast ai good` — build realistic adverse or favourable conditional
-  scenarios for the next 2–4 weeks and 1–3 months. These are explicitly labelled AI scenarios,
-  not predictions or WHO forecasts; baseline facts retain their source URLs.
+- `:forecast ai <bad|good>` — one command whose final argument selects a realistic adverse or
+  favourable conditional scenario for the next 2–4 weeks and 1–3 months. It is explicitly labelled
+  as an AI scenario, not a prediction or WHO forecast; baseline facts retain their source URLs.
 - `:test` — enter an empty, isolated in-memory test database; synchronization is disabled there.
 - `:test ai <scenario>` — ask Gemini to construct 3–12 explicitly synthetic events and display
   them on the map. Example: `:test ai глобальная эпидемия сибирской язвы в Евразии`.
