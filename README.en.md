@@ -53,6 +53,10 @@ show the English originals only.
 Switch the complete interface immediately with `:language ru` or `:language en`. The choice is
 saved to `config.toml`.
 
+On a portrait Termux/mobile terminal the interface automatically places the map on top and the
+Event Feed and Inspector side by side below it. Tap an event to select it, tap the Inspector or
+command line to activate it, and swipe or use the mouse wheel to scroll a panel.
+
 ## Gemini setup
 
 REDLINE uses Google's Gemini REST API directly. The primary model is

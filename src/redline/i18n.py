@@ -41,11 +41,15 @@ TEXT: dict[str, dict[str, str]] = {
     "panel.feed": {"ru": "ПОТОК СОБЫТИЙ", "en": "EVENT FEED"},
     "panel.inspector": {"ru": "ИНСПЕКТОР", "en": "INSPECTOR"},
     "panel.map": {"ru": "КАРТА / BRAILLE", "en": "MAP / BRAILLE"},
+    "panel.map.short": {"ru": "КАРТА", "en": "MAP"},
     "panel.coastline": {"ru": "БЕРЕГОВАЯ ЛИНИЯ", "en": "COASTLINE"},
     "panel.land": {"ru": "СУША", "en": "LAND"},
     "panel.outbreak": {"ru": "ВСПЫШКА", "en": "OUTBREAK"},
+    "panel.outbreak.short": {"ru": "ВСП.", "en": "OUTB."},
     "panel.spread": {"ru": "РАСПР.", "en": "SPREAD"},
+    "panel.spread.short": {"ru": "РАСП.", "en": "SPRD."},
     "panel.extinction": {"ru": "ВЫМИР.", "en": "EXTINCT."},
+    "panel.extinction.short": {"ru": "ВЫМ.", "en": "EXT."},
     "panel.command": {"ru": "КОМАНДА >", "en": "COMMAND >"},
     "top.title": {
         "ru": "REDLINE  //  ОФИЦИАЛЬНЫЙ ЭПИДЕМИОЛОГИЧЕСКИЙ РАДАР",
@@ -260,6 +264,7 @@ TEXT: dict[str, dict[str, str]] = {
         "en": "Duration syntax: duration=90d, duration=26w, duration=18m or duration=3y; maximum 10 years",
     },
     "top.test": {"ru": "TEST MODE / SYNTHETIC", "en": "TEST MODE / SYNTHETIC"},
+    "top.test.short": {"ru": "TEST", "en": "TEST"},
     "who.heading": {
         "ru": "WHO // АТРИБУТИРОВАННЫЕ РЕКОМЕНДАЦИИ",
         "en": "WHO // ATTRIBUTED GUIDANCE",

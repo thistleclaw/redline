@@ -165,6 +165,101 @@ async def test_braille_map_reflows_after_live_terminal_resize(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_portrait_terminal_places_map_above_side_by_side_information_panels(tmp_path):
+    app = RedlineApp(
+        config=Config(initialized=True, crt_effects=False, translation_enabled=False),
+        database=Database(tmp_path / "redline.sqlite3"),
+    )
+
+    async with app.run_test(size=(58, 44)) as pilot:
+        await pilot.pause()
+        map_panel = app.query_one("#map-panel")
+        right_panel = app.query_one("#right-panel")
+        feed_box = app.query_one("#feed-box")
+        detail_box = app.query_one("#detail-box")
+
+        assert app.portrait_layout is True
+        assert map_panel.region.width == right_panel.region.width
+        assert map_panel.region.y < right_panel.region.y
+        assert feed_box.region.y == detail_box.region.y
+        assert feed_box.region.x < detail_box.region.x
+        assert app.query_one("#notice").display is False
+        assert "PHEIC:" in app.query_one("#topline").renderable.plain
+        assert "ALERT:" in app.query_one("#topline").renderable.plain
+        assert "ВЫМ." in app.query_one("#map-title").renderable.plain
+
+        await pilot.resize_terminal(140, 35)
+        await pilot.pause()
+        assert app.portrait_layout is False
+        assert map_panel.region.y == right_panel.region.y
+        assert feed_box.region.x == detail_box.region.x
+        assert feed_box.region.y < detail_box.region.y
+        assert app.query_one("#notice").display is True
+
+
+@pytest.mark.asyncio
+async def test_first_run_setup_fits_a_narrow_termux_screen(tmp_path):
+    app = RedlineApp(
+        config=Config(initialized=False, crt_effects=False, translation_enabled=False),
+        database=Database(tmp_path / "redline.sqlite3"),
+    )
+
+    async with app.run_test(size=(48, 32)) as pilot:
+        await pilot.pause()
+        setup = app.screen.query_one("#setup")
+        assert setup.region.width <= app.screen.region.width
+        assert setup.region.height <= app.screen.region.height
+
+
+@pytest.mark.asyncio
+async def test_touch_selects_wrapped_feed_event_and_activates_panels(tmp_path, document, event):
+    database = Database(tmp_path / "redline.sqlite3")
+    for index in range(2):
+        current_document = replace(
+            document,
+            canonical_url=f"{document.canonical_url}-touch-{index}",
+            content_hash=f"touch-document-{index}",
+            title=(
+                f"Touch {index}: deliberately long official event title "
+                "that wraps inside a portrait feed panel"
+            ),
+        )
+        document_id, _ = database.save_document(current_document)
+        database.save_event(
+            replace(
+                event,
+                event_id=f"touch-event-{index}",
+                document_url=current_document.canonical_url,
+                situation_key=f"touch-situation-{index}",
+            ),
+            document_id,
+        )
+    app = RedlineApp(
+        config=Config(initialized=True, crt_effects=False, translation_enabled=False),
+        database=database,
+    )
+
+    async with app.run_test(size=(80, 45)) as pilot:
+        await pilot.pause()
+        app.selected_index = 1
+        app.refresh_view()
+        await pilot.pause()
+        assert await pilot.click("#event-feed", offset=(2, 1))
+        await pilot.pause()
+        assert app.selected_index == 0
+        assert app.active_tui_field == "feed"
+
+        assert await pilot.click("#detail-title", offset=(1, 0))
+        await pilot.pause()
+        assert app.active_tui_field == "details"
+
+        assert await pilot.click("#command-input", offset=(1, 0))
+        await pilot.pause()
+        assert app.active_tui_field == "command"
+        assert app.query_one("#command-input").has_focus
+
+
+@pytest.mark.asyncio
 async def test_tui_renders_map_commands_and_export(tmp_path, document, event):
     database = Database(tmp_path / "redline.sqlite3")
     document_id, _ = database.save_document(document)

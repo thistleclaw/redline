@@ -7,13 +7,14 @@ import uuid
 from datetime import timedelta
 from pathlib import Path
 
+from rich.style import Style
 from rich.text import Text
 from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.css.query import NoMatches
-from textual.events import Key, Resize
+from textual.events import Click, Key, Resize
 from textual.screen import ModalScreen
 from textual.suggester import Suggester
 from textual.timer import Timer
@@ -107,7 +108,7 @@ class CommandSuggester(Suggester):
 class SetupScreen(ModalScreen[Config]):
     CSS = """
     SetupScreen { align: center middle; background: #020817 82%; }
-    #setup { width: 72; border: tall #2563eb; background: #071225; padding: 2 3; }
+    #setup { width: 90%; max-width: 72; height: auto; max-height: 95%; overflow-y: auto; border: tall #2563eb; background: #071225; padding: 2 3; }
     #setup-title { color: #dbeafe; text-style: bold; margin-bottom: 1; }
     #setup-note { color: #94a3b8; margin-bottom: 1; }
     #setup Input { margin: 1 0; }
@@ -155,7 +156,7 @@ class AuthScreen(ModalScreen[tuple[str, str] | None]):
     ]
     CSS = """
     AuthScreen { align: center middle; background: #020817 82%; }
-    #auth { width: 72; border: tall #2563eb; background: #071225; padding: 2 3; }
+    #auth { width: 90%; max-width: 72; height: auto; max-height: 95%; overflow-y: auto; border: tall #2563eb; background: #071225; padding: 2 3; }
     #auth-title { color: #dbeafe; text-style: bold; margin-bottom: 1; }
     #auth-note { color: #94a3b8; margin-bottom: 1; }
     #auth Input { margin: 1 0; }
@@ -219,7 +220,7 @@ class RedlineApp(App[None]):
     #right-panel { width: 40%; margin-left: 1; }
     #feed-box { height: 55%; border: solid #174ea6; padding: 0 1; }
     #feed-scroll, #detail-scroll { height: 1fr; overflow-y: auto; }
-    #event-feed { height: auto; }
+    #event-feed { height: auto; link-style: not underline; link-style-hover: bold not underline; }
     #detail-box { height: 45%; border: solid #174ea6; padding: 0 1; margin-top: 1; }
     #details { height: auto; color: #cbd5e1; }
     #timeline { height: 3; margin: 0 1; border-top: solid #174ea6; color: #94a3b8; padding: 0 1; }
@@ -280,6 +281,7 @@ class RedlineApp(App[None]):
         self.command_history = self._load_command_history()
         self.command_history_index = len(self.command_history)
         self.command_history_draft = ""
+        self.portrait_layout = False
         # Applications launched by the CLI own their database and synchronize on
         # startup. Tests and embedders that inject a database remain deterministic
         # unless they explicitly opt in.
@@ -409,15 +411,67 @@ class RedlineApp(App[None]):
     def _apply_adaptive_layout(self) -> None:
         """Balance map and text space while both panels follow the terminal dimensions."""
         terminal_width = self.size.width
+        terminal_height = self.size.height
+        portrait = terminal_width < 72 or (
+            terminal_width < 110 and terminal_height * 2 >= terminal_width
+        )
+        self.portrait_layout = portrait
+
+        main = self.query_one("#main")
+        map_panel = self.query_one("#map-panel")
+        right_panel = self.query_one("#right-panel")
+        feed_box = self.query_one("#feed-box")
+        detail_box = self.query_one("#detail-box")
+        topbar = self.query_one("#topbar")
+        crt_line = self.query_one("#crt-line")
+        timeline = self.query_one("#timeline")
+        command_label = self.query_one("#command-label")
+        notice = self.query_one("#notice")
+
+        if portrait:
+            main.styles.layout = "vertical"
+            main.styles.padding = (0, 1, 0, 1)
+            map_panel.styles.width = "100%"
+            map_panel.styles.height = "54%"
+            right_panel.styles.layout = "horizontal"
+            right_panel.styles.width = "100%"
+            right_panel.styles.height = "46%"
+            right_panel.styles.margin = (0, 0, 0, 0)
+            feed_box.styles.width = "1fr"
+            feed_box.styles.height = "100%"
+            detail_box.styles.width = "1fr"
+            detail_box.styles.height = "100%"
+            detail_box.styles.margin = (0, 0, 0, 1)
+            topbar.styles.height = 2
+            crt_line.styles.display = "none"
+            timeline.styles.height = 2
+            command_label.styles.width = 11
+            notice.styles.display = "none"
+            return
+
+        main.styles.layout = "horizontal"
+        main.styles.padding = (1, 1, 0, 1)
         map_percent = 64 if terminal_width >= 180 else 60 if terminal_width >= 140 else 56
-        self.query_one("#map-panel").styles.width = f"{map_percent}%"
-        self.query_one("#right-panel").styles.width = f"{100 - map_percent}%"
-        if self.size.height < 32:
-            self.query_one("#feed-box").styles.height = "45%"
-            self.query_one("#detail-box").styles.height = "55%"
+        map_panel.styles.width = f"{map_percent}%"
+        map_panel.styles.height = "1fr"
+        right_panel.styles.layout = "vertical"
+        right_panel.styles.width = f"{100 - map_percent}%"
+        right_panel.styles.height = "1fr"
+        right_panel.styles.margin = (0, 0, 0, 1)
+        feed_box.styles.width = "1fr"
+        detail_box.styles.width = "1fr"
+        detail_box.styles.margin = (1, 0, 0, 0)
+        topbar.styles.height = 3
+        crt_line.styles.display = "block"
+        timeline.styles.height = 3
+        command_label.styles.width = 13
+        notice.styles.display = "block"
+        if terminal_height < 32:
+            feed_box.styles.height = "45%"
+            detail_box.styles.height = "55%"
         else:
-            self.query_one("#feed-box").styles.height = "55%"
-            self.query_one("#detail-box").styles.height = "45%"
+            feed_box.styles.height = "55%"
+            detail_box.styles.height = "45%"
 
     @work(group="sync", exclusive=True)
     async def run_sync(
@@ -473,13 +527,23 @@ class RedlineApp(App[None]):
         height = max(1, map_widget.size.height) if self.is_mounted else 25
         renderer = BrailleMapRenderer(width=width, height=height)
         map_widget.update(renderer.render(event_points(self.rows, selected_id), self.focus))
-        map_title = Text(tr(self.config.language, "panel.map"), style="bold #60a5fa")
+        compact_map_title = width < 70
+        map_title_key = "panel.map.short" if compact_map_title else "panel.map"
+        map_title = Text(tr(self.config.language, map_title_key), style="bold #60a5fa")
         land_key = "panel.coastline" if width >= 90 else "panel.land"
         map_title.append(f"  ⠿ {tr(self.config.language, land_key)}", style="#24598f")
-        map_title.append(f"  ⠿ {tr(self.config.language, 'panel.outbreak')}", style="bold #ff334f")
-        map_title.append(f"  ⠿ {tr(self.config.language, 'panel.spread')}", style="bold #c51f43")
+        suffix = ".short" if compact_map_title else ""
         map_title.append(
-            f"  ⠿ {tr(self.config.language, 'panel.extinction')}", style="bold #737b8c"
+            f"  ⠿ {tr(self.config.language, 'panel.outbreak' + suffix)}",
+            style="bold #ff334f",
+        )
+        map_title.append(
+            f"  ⠿ {tr(self.config.language, 'panel.spread' + suffix)}",
+            style="bold #c51f43",
+        )
+        map_title.append(
+            f"  ⠿ {tr(self.config.language, 'panel.extinction' + suffix)}",
+            style="bold #737b8c",
         )
         self.query_one("#map-title", Static).update(map_title)
         self.query_one("#event-feed", Static).update(self.render_feed())
@@ -500,16 +564,25 @@ class RedlineApp(App[None]):
     def render_topline(self) -> Text:
         unread = len(self.database.unread_alert_event_ids())
         pheic = self.database.active_pheic_count()
-        text = Text(tr(self.config.language, "top.title"), style="bold #dbeafe")
+        title = "REDLINE  //" if self.portrait_layout else tr(self.config.language, "top.title")
+        text = Text(title, style="bold #dbeafe")
+        gap = "  " if self.portrait_layout else "    "
+        value_gap = "" if self.portrait_layout else " "
         if self.test_mode:
-            text.append(f"    {tr(self.config.language, 'top.test')}", style="bold #f59e0b")
+            test_key = "top.test.short" if self.portrait_layout else "top.test"
+            text.append(f"{gap}{tr(self.config.language, test_key)}", style="bold #f59e0b")
         if self.timelapse is not None:
             text.append(
-                f"    W{max(0, self.timelapse_week)}/{self.timelapse.duration_weeks}",
+                f"{gap}W{max(0, self.timelapse_week)}/{self.timelapse.duration_weeks}",
                 style="bold #f59e0b",
             )
-        text.append(f"    PHEIC: {pheic}", style="bold #ff4f61" if pheic else "#60a5fa")
-        text.append(f"    ALERT: {unread}", style="bold #ff4f61" if unread else "#94a3b8")
+        text.append(
+            f"{gap}PHEIC:{value_gap}{pheic}", style="bold #ff4f61" if pheic else "#60a5fa"
+        )
+        text.append(
+            f"{gap}ALERT:{value_gap}{unread}",
+            style="bold #ff4f61" if unread else "#94a3b8",
+        )
         return text
 
     def render_source_health(self) -> Text:
@@ -555,8 +628,11 @@ class RedlineApp(App[None]):
             style = "bold #ff4f61" if row["unread_alert"] else "#cbd5e1"
             if active:
                 style += " on #123b75"
-            text.append(f"{prefix}{territory.upper():18.18} ", style=style)
-            text.append(title + "\n", style=style)
+            touch_style = Style.parse(style) + Style.from_meta(
+                {"@click": f"app.select_event({index})"}
+            )
+            text.append(f"{prefix}{territory.upper():18.18} ", style=touch_style)
+            text.append(title + "\n", style=touch_style)
         return text
 
     def render_selected(self) -> Text:
@@ -681,6 +757,33 @@ class RedlineApp(App[None]):
             self.selected_index = (self.selected_index + 1) % len(self.rows)
             self.viewer_open = False
             self.refresh_view()
+
+    def action_select_event(self, index: int) -> None:
+        """Select an event from a mouse or Termux touch-generated click."""
+        if 0 <= index < len(self.rows):
+            self._activate_right_panel("feed")
+            self.selected_index = index
+            self.viewer_open = False
+            self.refresh_view()
+
+    @on(Click, "#feed-title")
+    def touch_feed(self, event: Click) -> None:
+        self._activate_right_panel("feed")
+
+    @on(Click, "#detail-title")
+    @on(Click, "#details")
+    def touch_details(self, event: Click) -> None:
+        self._activate_right_panel("details")
+
+    @on(Click, "#command-label")
+    def touch_command_label(self, event: Click) -> None:
+        self._activate_tui_field("command")
+
+    @on(Click, "#command-input")
+    def command_input_touched(self, event: Click) -> None:
+        # A touchscreen tap focuses Input directly, bypassing PgDown navigation.
+        self.active_tui_field = "command"
+        self._update_navigation_markers()
 
     def action_open_selected(self) -> None:
         if self.rows:
