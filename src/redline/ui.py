@@ -26,6 +26,7 @@ from redline.ai import (
     GeminiError,
     ScenarioResult,
     TimelapseResult,
+    generate_test_model,
     generate_test_scenario,
     generate_test_timelapse,
     ingest_test_scenario,
@@ -47,6 +48,7 @@ COMMAND_SYNTAXES = tuple(syntax for syntax, _key in COMMANDS)
 COMMAND_COMPLETIONS = (
     ":forecast ai bad",
     ":forecast ai good",
+    ":test ai model",
     *COMMAND_SYNTAXES,
 )
 TIMELAPSE_SPEED = re.compile(r"^(\d+)w/(?:([0-9]+(?:\.[0-9]+)?)s|s)$", re.IGNORECASE)
@@ -1044,7 +1046,8 @@ class RedlineApp(App[None]):
             self._control_timelapse(args[0].casefold())
             return
         if len(args) >= 2 and args[0].casefold() == "ai":
-            if args[1].casefold() == "timelapse":
+            if args[1].casefold() in {"timelapse", "model"}:
+                mode = args[1].casefold()
                 tail = args[2:]
                 weeks, seconds, label = 1, 1.0, "1w/1s"
                 duration_weeks: int | None = None
@@ -1066,9 +1069,8 @@ class RedlineApp(App[None]):
                         raise ValueError(tr(self.config.language, error_key)) from error
                 if not tail:
                     raise ValueError(tr(self.config.language, "command.test_usage"))
-                self.run_ai_timelapse(
-                    " ".join(tail), weeks, seconds, label, duration_weeks=duration_weeks
-                )
+                runner = self.run_ai_model if mode == "model" else self.run_ai_timelapse
+                runner(" ".join(tail), weeks, seconds, label, duration_weeks=duration_weeks)
             else:
                 self.run_ai_test_scenario(" ".join(args[1:]))
             return
@@ -1271,6 +1273,56 @@ class RedlineApp(App[None]):
             )
         )
 
+    @work(group="ai", exclusive=True, exit_on_error=False)
+    async def run_ai_model(
+        self,
+        query: str,
+        step_weeks: int,
+        interval: float,
+        speed_label: str,
+        *,
+        duration_weeks: int | None = None,
+    ) -> None:
+        if not self.gemini.configured:
+            self.query_one("#details", Static).update(tr(self.config.language, "ai.key_missing"))
+            return
+        self.query_one("#details", Static).update(tr(self.config.language, "ai.model_running"))
+        try:
+            timelapse = await generate_test_model(
+                self.gemini,
+                query,
+                self.config.language,
+                requested_duration_weeks=duration_weeks,
+            )
+        except GeminiError as error:
+            self.query_one("#details", Static).update(
+                tr(self.config.language, "ai.error", error=str(error)[:500])
+            )
+            return
+        self._enter_test_mode(reset=True)
+        self.timelapse = timelapse
+        self.timelapse_week = -1
+        self.timelapse_step_weeks = step_weeks
+        self.timelapse_interval = interval
+        self.timelapse_speed_label = speed_label
+        self.timelapse_running = True
+        self.timelapse_run_id = uuid.uuid4().hex
+        self.timelapse_base = utcnow()
+        self._advance_timelapse(1)
+        self.timelapse_timer = self.set_interval(interval, self._timelapse_tick)
+        self._audit_ai_request("test_seir_parameters", timelapse.model)
+        self.query_one("#details", Static).update(
+            tr(
+                self.config.language,
+                "test.model_generated",
+                title=timelapse.title,
+                weeks=timelapse.duration_weeks,
+                speed=speed_label,
+                model=timelapse.model,
+                summary=timelapse.summary,
+            )
+        )
+
     def _timelapse_tick(self) -> None:
         if self.timelapse_running:
             self._advance_timelapse(self.timelapse_step_weeks)
@@ -1286,11 +1338,14 @@ class RedlineApp(App[None]):
                 if int(event["week"]) == week
             )
             if batch:
+                is_local_model = self.timelapse.engine == "numpy_seir"
                 ingest_test_scenario(
                     self.test_database,
                     ScenarioResult(self.timelapse.title, batch, self.timelapse.model),
                     occurred_at=self.timelapse_base + timedelta(weeks=week),
                     identity=f"{self.timelapse_run_id}|week:{week}",
+                    source_id="redline_test_model" if is_local_model else "redline_test_ai",
+                    source_category="seir_model" if is_local_model else "test_scenario",
                 )
         self.timelapse_week = target
         if self.timelapse_week >= self.timelapse.duration_weeks:

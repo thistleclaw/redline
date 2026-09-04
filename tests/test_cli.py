@@ -25,4 +25,4 @@ def test_cli_reports_installed_version(capsys):
     with pytest.raises(SystemExit, match="0"):
         main(["--version"])
 
-    assert capsys.readouterr().out.strip() == "redline 0.1.1"
+    assert capsys.readouterr().out.strip() == "redline 0.2.0"

@@ -105,6 +105,10 @@ The bottom command line supports:
 - `:test ai timelapse <scenario>` — generate a synthetic progression up to 520 weeks and play it
   at one week per second. Add `duration=90d`, `duration=26w`, `duration=18m` or `duration=3y` and
   `speed=2w/s` or `speed=1w/2s` after `timelapse`; duration and speed may appear in either order.
+- `:test ai model <scenario>` — ask Gemini for bounded input assumptions only, then calculate an
+  extended spatial SEIR model locally with NumPy. `duration=` and `speed=` work as for timelapse;
+  calculated rows include Rt, active infections, hospital load, deaths and a deterministic P10–P90
+  ensemble range. See the [model notes](docs/SEIR_MODEL.md).
 - `:test pause`, `:test play`, `:test step` — pause, resume, or advance a timelapse by one week.
 - `:test off` — discard all test events and restore the untouched live database and view state.
 - `:focus`, `:filter`, `:sync`, `:history`, `:brief`, `:export`, `:log`, `:settings` — existing

@@ -10,6 +10,7 @@ from redline.ai import (
     GeminiClient,
     GeminiError,
     GeminiResult,
+    generate_test_model,
     generate_test_scenario,
     generate_test_timelapse,
     ingest_test_scenario,
@@ -257,3 +258,65 @@ async def test_ai_timelapse_honors_an_explicit_multi_year_duration():
 
     assert result.duration_weeks == 156
     assert result.events[-1]["week"] == 156
+
+
+@pytest.mark.asyncio
+async def test_ai_model_uses_gemini_only_for_parameters_and_numpy_for_outcomes():
+    payload = {
+        "title": "Local model",
+        "disease": "Test virus",
+        "duration_days": 84,
+        "rationale": "A bounded synthetic hypothesis",
+        "parameters": {
+            "r0": 2.0,
+            "latent_days": 4.0,
+            "infectious_days": 6.0,
+            "asymptomatic_fraction": 0.2,
+            "asymptomatic_relative_infectiousness": 0.5,
+            "hospitalization_fraction": 0.05,
+            "hospital_stay_days": 8.0,
+            "infection_fatality_ratio": 0.01,
+            "immunity_waning_days": 0.0,
+            "vaccine_start_day": 30,
+            "vaccination_per_1000_per_day": 0.0,
+            "vaccine_effectiveness": 0.0,
+            "vaccine_waning_days": 0.0,
+            "seasonal_amplitude": 0.0,
+            "seasonal_peak_day": 0,
+            "mobility_rate": 0.0,
+            "mobility_distance_km": 1000.0,
+            "uncertainty_fraction": 0.0,
+        },
+        "locations": [
+            {
+                "name": "Test city",
+                "latitude": 50.0,
+                "longitude": 30.0,
+                "population": 500_000,
+                "initial_exposed": 20,
+                "initial_infectious": 5,
+                "initial_recovered_fraction": 0.0,
+                "initial_vaccinated_fraction": 0.0,
+                "daily_importations": 0.0,
+                "travel_weight": 1.0,
+            }
+        ],
+        "interventions": [],
+    }
+
+    class FakeClient:
+        async def generate(self, prompt, *, system_instruction, response_schema=None):
+            assert "MODEL PARAMETERS" in system_instruction
+            assert "never generate outcome rows" in system_instruction
+            assert "events" not in response_schema["properties"]
+            return GeminiResult(json.dumps(payload), "gemini-3.5-flash-lite")
+
+    result = await generate_test_model(
+        FakeClient(), "test epidemic", "en", requested_duration_weeks=20
+    )
+
+    assert result.duration_weeks == 20
+    assert result.engine == "numpy_seir"
+    assert result.events
+    assert all(event["emergency"] == "none" for event in result.events)
+    assert "NumPy SEAIRHDV" in result.model

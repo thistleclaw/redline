@@ -22,6 +22,53 @@ class FakeGemini:
 
     async def generate(self, prompt, *, system_instruction, response_schema=None):
         if response_schema is not None:
+            if "SEIR MODEL" in prompt:
+                return GeminiResult(
+                    json.dumps(
+                        {
+                            "title": "Synthetic local model",
+                            "disease": "Anthrax",
+                            "duration_days": 84,
+                            "rationale": "Synthetic UI fixture",
+                            "parameters": {
+                                "r0": 1.8,
+                                "latent_days": 3.0,
+                                "infectious_days": 7.0,
+                                "asymptomatic_fraction": 0.0,
+                                "asymptomatic_relative_infectiousness": 0.0,
+                                "hospitalization_fraction": 0.2,
+                                "hospital_stay_days": 10.0,
+                                "infection_fatality_ratio": 0.05,
+                                "immunity_waning_days": 0.0,
+                                "vaccine_start_day": 30,
+                                "vaccination_per_1000_per_day": 0.0,
+                                "vaccine_effectiveness": 0.0,
+                                "vaccine_waning_days": 0.0,
+                                "seasonal_amplitude": 0.0,
+                                "seasonal_peak_day": 0,
+                                "mobility_rate": 0.1,
+                                "mobility_distance_km": 2000.0,
+                                "uncertainty_fraction": 0.0,
+                            },
+                            "locations": [
+                                {
+                                    "name": "Eurasia test node",
+                                    "latitude": 50.0,
+                                    "longitude": 50.0,
+                                    "population": 1_000_000,
+                                    "initial_exposed": 30,
+                                    "initial_infectious": 5,
+                                    "initial_recovered_fraction": 0.0,
+                                    "initial_vaccinated_fraction": 0.0,
+                                    "daily_importations": 0.0,
+                                    "travel_weight": 1.0,
+                                }
+                            ],
+                            "interventions": [],
+                        }
+                    ),
+                    "gemini-3.5-flash-lite",
+                )
             if "TIMELAPSE" in prompt:
                 return GeminiResult(
                     json.dumps(
@@ -662,3 +709,24 @@ async def test_ai_timelapse_command_accepts_duration_and_speed_in_any_order(tmp_
         assert app.timelapse is not None
         assert app.timelapse.duration_weeks == 156
         assert app.timelapse_step_weeks == 2
+
+
+@pytest.mark.asyncio
+async def test_ai_model_command_calculates_local_events_and_enters_test_mode(tmp_path):
+    app = RedlineApp(
+        config=Config(initialized=True, crt_effects=False, translation_enabled=False),
+        database=Database(tmp_path / "redline.sqlite3"),
+        gemini_client=FakeGemini(),
+    )
+
+    async with app.run_test(size=(150, 45)):
+        app.execute_command(":test ai model duration=20w speed=2w/60s эпидемия в Евразии")
+        await app.workers.wait_for_complete()
+
+        assert app.test_mode
+        assert app.timelapse is not None
+        assert app.timelapse.engine == "numpy_seir"
+        assert app.timelapse.duration_weeks == 20
+        assert app.timelapse_step_weeks == 2
+        assert app.database.events()[0]["source_id"] == "redline_test_model"
+        assert "не прогноз" in app.query_one("#details").renderable

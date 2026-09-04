@@ -163,8 +163,8 @@ TEXT: dict[str, dict[str, str]] = {
         "en": "Usage: :forecast ai <bad|good>",
     },
     "command.test_usage": {
-        "ru": "Использование: :test, :test off, :test ai <сценарий>, :test ai timelapse [duration=3y] [speed=1w/s] <сценарий>, :test pause|play|step",
-        "en": "Usage: :test, :test off, :test ai <scenario>, :test ai timelapse [duration=3y] [speed=1w/s] <scenario>, :test pause|play|step",
+        "ru": "Использование: :test, :test off, :test ai <сценарий>, :test ai timelapse [duration=3y] [speed=1w/s] <сценарий>, :test ai model [duration=1y] [speed=1w/s] <сценарий>, :test pause|play|step",
+        "en": "Usage: :test, :test off, :test ai <scenario>, :test ai timelapse [duration=3y] [speed=1w/s] <scenario>, :test ai model [duration=1y] [speed=1w/s] <scenario>, :test pause|play|step",
     },
     "command.language_usage": {
         "ru": "Использование: :language <ru|en>",
@@ -217,6 +217,10 @@ TEXT: dict[str, dict[str, str]] = {
         "ru": "GEMINI // построение синтетического таймлапса...",
         "en": "GEMINI // building a synthetic timelapse...",
     },
+    "ai.model_running": {
+        "ru": "GEMINI // подбор параметров... NUMPY // локальный расчёт SEIR...",
+        "en": "GEMINI // selecting parameters... NUMPY // calculating SEIR locally...",
+    },
     "ai.error": {"ru": "GEMINI // ошибка: {error}", "en": "GEMINI // error: {error}"},
     "ai.answer_heading": {"ru": "GEMINI // ОТВЕТ", "en": "GEMINI // ANSWER"},
     "ai.advice_heading": {
@@ -259,6 +263,10 @@ TEXT: dict[str, dict[str, str]] = {
     "test.timelapse_generated": {
         "ru": "TIMELAPSE // «{title}» · {weeks} нед. · скорость {speed}\nМодель: {model}\nСобытия синтетические и существуют только в памяти.",
         "en": "TIMELAPSE // “{title}” · {weeks} weeks · speed {speed}\nModel: {model}\nEvents are synthetic and exist only in memory.",
+    },
+    "test.model_generated": {
+        "ru": "SEIR MODEL // «{title}» · {weeks} нед. · скорость {speed}\nДвижок: {model}\n\n{summary}",
+        "en": "SEIR MODEL // “{title}” · {weeks} weeks · speed {speed}\nEngine: {model}\n\n{summary}",
     },
     "test.timelapse_status": {
         "ru": "TIMELAPSE · неделя {week}/{total} · {speed} · {state}",
@@ -322,6 +330,7 @@ COMMANDS = (
     (":test [off]", "cmd.test"),
     (":test ai <scenario>", "cmd.test_ai"),
     (":test ai timelapse [duration=3y] [speed=1w/s] <scenario>", "cmd.test_timelapse"),
+    (":test ai model [duration=1y] [speed=1w/s] <scenario>", "cmd.test_model"),
     (":test pause|play|step", "cmd.test_controls"),
     (":export <json|markdown> [path]", "cmd.export"),
     (":log", "cmd.log"),
@@ -359,6 +368,10 @@ TEXT.update(
         "cmd.test_timelapse": {
             "ru": "AI-таймлапс; по умолчанию одна неделя в секунду",
             "en": "AI timelapse; defaults to one week per second",
+        },
+        "cmd.test_model": {
+            "ru": "Gemini подбирает параметры, NumPy локально считает расширенный SEIR",
+            "en": "Gemini selects parameters; NumPy calculates the extended SEIR locally",
         },
         "cmd.test_controls": {
             "ru": "пауза, продолжение или один недельный шаг",

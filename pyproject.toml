@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "redline-epivigil"
-version = "0.1.1"
+version = "0.2.0"
 description = "REDLINE - local-first epidemiological TUI radar"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -29,6 +29,7 @@ dependencies = [
   "geonamescache==3.0.2",
   "googletrans==4.0.2",
   "httpx>=0.27",
+  "numpy>=1.24,<3",
   "textual>=0.79,<2",
   "tomli>=2.0; python_version < '3.11'",
 ]

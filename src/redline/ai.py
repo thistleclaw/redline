@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
@@ -13,6 +14,13 @@ import httpx
 from redline.compat import UTC
 from redline.config import Config
 from redline.database import Database
+from redline.epimodel import (
+    MAX_MODEL_DAYS,
+    MIN_MODEL_DAYS,
+    ModelInputError,
+    parse_model_spec,
+    simulate_model,
+)
 from redline.models import (
     EmergencyStatus,
     Event,
@@ -119,6 +127,120 @@ TIMELAPSE_SCHEMA: dict[str, Any] = {
     "required": ["title", "duration_weeks", "events"],
 }
 
+MODEL_PARAMETER_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "title": {"type": "string"},
+        "disease": {"type": "string"},
+        "duration_days": {"type": "integer"},
+        "rationale": {"type": "string"},
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "r0": {"type": "number"},
+                "latent_days": {"type": "number"},
+                "infectious_days": {"type": "number"},
+                "asymptomatic_fraction": {"type": "number"},
+                "asymptomatic_relative_infectiousness": {"type": "number"},
+                "hospitalization_fraction": {"type": "number"},
+                "hospital_stay_days": {"type": "number"},
+                "infection_fatality_ratio": {"type": "number"},
+                "immunity_waning_days": {"type": "number"},
+                "vaccine_start_day": {"type": "integer"},
+                "vaccination_per_1000_per_day": {"type": "number"},
+                "vaccine_effectiveness": {"type": "number"},
+                "vaccine_waning_days": {"type": "number"},
+                "seasonal_amplitude": {"type": "number"},
+                "seasonal_peak_day": {"type": "integer"},
+                "mobility_rate": {"type": "number"},
+                "mobility_distance_km": {"type": "number"},
+                "uncertainty_fraction": {"type": "number"},
+            },
+            "required": [
+                "r0",
+                "latent_days",
+                "infectious_days",
+                "asymptomatic_fraction",
+                "asymptomatic_relative_infectiousness",
+                "hospitalization_fraction",
+                "hospital_stay_days",
+                "infection_fatality_ratio",
+                "immunity_waning_days",
+                "vaccine_start_day",
+                "vaccination_per_1000_per_day",
+                "vaccine_effectiveness",
+                "vaccine_waning_days",
+                "seasonal_amplitude",
+                "seasonal_peak_day",
+                "mobility_rate",
+                "mobility_distance_km",
+                "uncertainty_fraction",
+            ],
+        },
+        "locations": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "latitude": {"type": "number"},
+                    "longitude": {"type": "number"},
+                    "population": {"type": "number"},
+                    "initial_exposed": {"type": "number"},
+                    "initial_infectious": {"type": "number"},
+                    "initial_recovered_fraction": {"type": "number"},
+                    "initial_vaccinated_fraction": {"type": "number"},
+                    "daily_importations": {"type": "number"},
+                    "travel_weight": {"type": "number"},
+                },
+                "required": [
+                    "name",
+                    "latitude",
+                    "longitude",
+                    "population",
+                    "initial_exposed",
+                    "initial_infectious",
+                    "initial_recovered_fraction",
+                    "initial_vaccinated_fraction",
+                    "daily_importations",
+                    "travel_weight",
+                ],
+            },
+        },
+        "interventions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "start_day": {"type": "integer"},
+                    "end_day": {"type": "integer"},
+                    "transmission_multiplier": {"type": "number"},
+                    "mobility_multiplier": {"type": "number"},
+                    "vaccination_multiplier": {"type": "number"},
+                    "label": {"type": "string"},
+                },
+                "required": [
+                    "start_day",
+                    "end_day",
+                    "transmission_multiplier",
+                    "mobility_multiplier",
+                    "vaccination_multiplier",
+                    "label",
+                ],
+            },
+        },
+    },
+    "required": [
+        "title",
+        "disease",
+        "duration_days",
+        "rationale",
+        "parameters",
+        "locations",
+        "interventions",
+    ],
+}
+
 
 class GeminiError(RuntimeError):
     pass
@@ -143,6 +265,8 @@ class TimelapseResult:
     duration_weeks: int
     events: tuple[dict[str, object], ...]
     model: str
+    engine: str = "gemini_events"
+    summary: str = ""
 
 
 class GeminiClient:
@@ -397,12 +521,72 @@ async def generate_test_timelapse(
     )
 
 
+async def generate_test_model(
+    client: GeminiClient,
+    query: str,
+    language: str,
+    *,
+    requested_duration_weeks: int | None = None,
+) -> TimelapseResult:
+    if requested_duration_weeks is not None and not (
+        6 <= requested_duration_weeks <= MAX_TIMELAPSE_WEEKS
+    ):
+        raise GeminiError("SEIR model duration must be between 6 and 520 weeks")
+    output_language = "Russian" if language == "ru" else "English"
+    duration_instruction = (
+        f"Use exactly {requested_duration_weeks * 7} simulation days. "
+        if requested_duration_weeks is not None
+        else f"Choose duration_days between {MIN_MODEL_DAYS} and {MAX_MODEL_DAYS}. "
+    )
+    system = (
+        "You configure a fictional compartmental epidemic simulation. Return MODEL PARAMETERS "
+        "ONLY: never generate outcome rows, weekly events, case curves, predictions, PHEIC or "
+        "official declarations. REDLINE will calculate every outcome locally. Select plausible "
+        "hypothesis values from the request and general epidemiological literature, but do not "
+        "claim that uncertain values are measured facts. "
+        + duration_instruction
+        + "Use 1-12 geographic nodes with realistic coordinates and approximate populations. "
+        "The fields are: R0 0.05-25; latent_days 0.1-60; infectious_days 0.1-90; fractions 0-1; "
+        "immunity_waning_days and vaccine_waning_days use 0 to disable waning; "
+        "vaccination_per_1000_per_day 0-100; seasonal_amplitude -0.5 to 0.5; "
+        "mobility_rate 0-0.75; mobility_distance_km 25-20000; uncertainty_fraction 0-0.6. "
+        "Intervention multipliers below 1 reduce transmission or movement, above 1 increase it. "
+        "initial_recovered_fraction plus initial_vaccinated_fraction and initial infections must "
+        "fit within each population. All values must be numeric, finite and internally coherent. "
+        "Use extinction only as a biological-population assumption in parameters; do not label "
+        "ordinary epidemic decline as human extinction. "
+        f"Write labels and rationale in {output_language}."
+    )
+    result = await client.generate(
+        f"Choose parameters for a SYNTHETIC LOCAL SEIR MODEL for this request:\n{query}",
+        system_instruction=system,
+        response_schema=MODEL_PARAMETER_SCHEMA,
+    )
+    try:
+        payload = json.loads(result.text)
+        duration_days = requested_duration_weeks * 7 if requested_duration_weeks else None
+        spec = parse_model_spec(payload, duration_days=duration_days)
+        run = await asyncio.to_thread(simulate_model, spec, language=language)
+    except (TypeError, json.JSONDecodeError, ModelInputError, FloatingPointError) as error:
+        raise GeminiError(f"Invalid SEIR model parameters: {error}") from error
+    return TimelapseResult(
+        title=run.title,
+        duration_weeks=run.duration_weeks,
+        events=run.events,
+        model=f"NumPy SEAIRHDV · parameters: {result.model}",
+        engine="numpy_seir",
+        summary=run.summary,
+    )
+
+
 def ingest_test_scenario(
     database: Database,
     scenario: ScenarioResult,
     *,
     occurred_at: datetime | None = None,
     identity: str | None = None,
+    source_id: str = "redline_test_ai",
+    source_category: str = "test_scenario",
 ) -> int:
     fetched_at = datetime.now(UTC)
     event_time = occurred_at or fetched_at
@@ -413,14 +597,14 @@ def ingest_test_scenario(
         document_url = f"redline-test://scenario/{scenario_id}/{index}"
         text = f"SYNTHETIC TEST DATA — NOT AN OFFICIAL REPORT\n\n{item['summary']}"
         document = SourceDocument(
-            source_id="redline_test_ai",
+            source_id=source_id,
             canonical_url=document_url,
             title=str(item["title"]),
             published_at=event_time,
             fetched_at=fetched_at,
             excerpt=str(item["summary"]),
             original_text=text,
-            category="test_scenario",
+            category=source_category,
             content_hash=hashlib.sha256(text.encode("utf-8")).hexdigest(),
             language="ru" if _contains_cyrillic(text) else "en",
         )
@@ -440,7 +624,7 @@ def ingest_test_scenario(
             location_precision=LocationPrecision.POINT,
             evidence=EvidenceStatus(str(item["evidence"])),
             emergency=EmergencyStatus(str(item["emergency"])),
-            source_category="test_scenario",
+            source_category=source_category,
             summary=str(item["summary"]),
             occurred_at=event_time,
             map_status=MapStatus(str(item["map_status"])),
