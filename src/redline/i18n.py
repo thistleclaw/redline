@@ -158,6 +158,10 @@ TEXT: dict[str, dict[str, str]] = {
         "ru": "Использование: :advice или :advice ai",
         "en": "Usage: :advice or :advice ai",
     },
+    "command.forecast_usage": {
+        "ru": "Использование: :forecast ai <bad|good>",
+        "en": "Usage: :forecast ai <bad|good>",
+    },
     "command.test_usage": {
         "ru": "Использование: :test, :test off, :test ai <сценарий>, :test ai timelapse [duration=3y] [speed=1w/s] <сценарий>, :test pause|play|step",
         "en": "Usage: :test, :test off, :test ai <scenario>, :test ai timelapse [duration=3y] [speed=1w/s] <scenario>, :test pause|play|step",
@@ -201,6 +205,10 @@ TEXT: dict[str, dict[str, str]] = {
         "ru": "GEMINI // анализ контекста монитора...",
         "en": "GEMINI // analyzing monitor context...",
     },
+    "ai.forecast_running": {
+        "ru": "GEMINI // построение условного сценария...",
+        "en": "GEMINI // building a conditional scenario...",
+    },
     "ai.test_running": {
         "ru": "GEMINI // построение изолированного тестового сценария...",
         "en": "GEMINI // building an isolated test scenario...",
@@ -214,6 +222,14 @@ TEXT: dict[str, dict[str, str]] = {
     "ai.advice_heading": {
         "ru": "GEMINI // АНАЛИТИЧЕСКИЕ СОВЕТЫ · НЕ ПОЗИЦИЯ WHO",
         "en": "GEMINI // ANALYTICAL ADVICE · NOT A WHO POSITION",
+    },
+    "ai.forecast_bad_heading": {
+        "ru": "GEMINI // НЕБЛАГОПРИЯТНЫЙ СЦЕНАРИЙ · НЕ ПРОГНОЗ WHO",
+        "en": "GEMINI // ADVERSE SCENARIO · NOT A WHO FORECAST",
+    },
+    "ai.forecast_good_heading": {
+        "ru": "GEMINI // БЛАГОПРИЯТНЫЙ СЦЕНАРИЙ · НЕ ПРОГНОЗ WHO",
+        "en": "GEMINI // FAVOURABLE SCENARIO · NOT A WHO FORECAST",
     },
     "ai.model": {"ru": "Модель", "en": "Model"},
     "ai.key_missing": {
@@ -302,6 +318,7 @@ COMMANDS = (
     (":brief", "cmd.brief"),
     (":advice [ai]", "cmd.advice"),
     (":ask ai <question>", "cmd.ask"),
+    (":forecast ai <bad|good>", "cmd.forecast"),
     (":test [off]", "cmd.test"),
     (":test ai <scenario>", "cmd.test_ai"),
     (":test ai timelapse [duration=3y] [speed=1w/s] <scenario>", "cmd.test_timelapse"),
@@ -329,6 +346,10 @@ TEXT.update(
         "cmd.ask": {
             "ru": "вопрос Gemini с контекстом монитора",
             "en": "ask Gemini with monitor context",
+        },
+        "cmd.forecast": {
+            "ru": "благоприятный или неблагоприятный AI-сценарий",
+            "en": "favourable or adverse AI scenario",
         },
         "cmd.test": {"ru": "включить/выключить тестовый режим", "en": "enter/leave test mode"},
         "cmd.test_ai": {

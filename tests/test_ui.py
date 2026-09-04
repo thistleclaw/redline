@@ -69,6 +69,17 @@ class FakeGemini:
         )
 
 
+class RecordingGemini:
+    configured = True
+
+    def __init__(self):
+        self.requests = []
+
+    async def generate(self, prompt, *, system_instruction, response_schema=None):
+        self.requests.append((prompt, system_instruction, response_schema))
+        return GeminiResult("Conditional scenario output", "gemini-3.5-flash-lite")
+
+
 def test_crt_tick_is_safe_before_widgets_mount() -> None:
     app = RedlineApp(config=Config(crt_effects=True, translation_enabled=False))
 
@@ -396,6 +407,57 @@ async def test_ask_ai_command_uses_monitor_context(tmp_path):
         await pilot.resize_terminal(130, 35)
         await pilot.pause()
         assert "Context answer" in app.query_one("#details").renderable.plain
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("direction", "trajectory", "heading"),
+    [
+        ("bad", "adverse", "НЕБЛАГОПРИЯТНЫЙ СЦЕНАРИЙ"),
+        ("good", "favourable", "БЛАГОПРИЯТНЫЙ СЦЕНАРИЙ"),
+    ],
+)
+async def test_forecast_ai_builds_a_labelled_conditional_scenario(
+    tmp_path, direction, trajectory, heading
+):
+    gemini = RecordingGemini()
+    app = RedlineApp(
+        config=Config(initialized=True, language="ru", crt_effects=False),
+        database=Database(tmp_path / f"redline-{direction}.sqlite3"),
+        gemini_client=gemini,
+    )
+
+    async with app.run_test(size=(150, 45)):
+        app.execute_command(f":forecast ai {direction}")
+        await app.workers.wait_for_complete()
+
+        prompt, system, schema = gemini.requests[0]
+        assert trajectory in prompt
+        assert trajectory in system
+        assert "MONITOR_CONTEXT" in prompt
+        assert "not a prediction" in system
+        assert schema is None
+        details = app.query_one("#details").renderable.plain
+        assert heading in details
+        assert "НЕ ПРОГНОЗ WHO" in details
+        assert "Conditional scenario output" in details
+
+
+@pytest.mark.asyncio
+async def test_forecast_command_rejects_an_unknown_direction(tmp_path):
+    gemini = RecordingGemini()
+    app = RedlineApp(
+        config=Config(initialized=True, language="ru", crt_effects=False),
+        database=Database(tmp_path / "redline.sqlite3"),
+        gemini_client=gemini,
+    )
+
+    async with app.run_test(size=(120, 35)):
+        app.execute_command(":forecast ai neutral")
+        assert "Использование: :forecast ai <bad|good>" in str(
+            app.query_one("#details").renderable
+        )
+        assert gemini.requests == []
 
 
 @pytest.mark.asyncio

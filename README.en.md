@@ -95,6 +95,9 @@ The bottom command line supports:
 - `:advice ai` — ask Gemini for monitoring priorities and data-quality caveats based only on the
   monitor context. The result is explicitly labelled as AI analysis, not a WHO position or medical
   advice.
+- `:forecast ai bad` and `:forecast ai good` — build realistic adverse or favourable conditional
+  scenarios for the next 2–4 weeks and 1–3 months. These are explicitly labelled AI scenarios,
+  not predictions or WHO forecasts; baseline facts retain their source URLs.
 - `:test` — enter an empty, isolated in-memory test database; synchronization is disabled there.
 - `:test ai <scenario>` — ask Gemini to construct 3–12 explicitly synthetic events and display
   them on the map. Example: `:test ai глобальная эпидемия сибирской язвы в Евразии`.
