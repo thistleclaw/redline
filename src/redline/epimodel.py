@@ -107,9 +107,7 @@ def parse_model_spec(raw: object, *, duration_days: int | None = None) -> ModelS
         duration_days=_integer(requested_days, MIN_MODEL_DAYS, MAX_MODEL_DAYS, "duration_days"),
         r0=_number(parameters.get("r0"), 0.05, 25.0, "r0"),
         latent_days=_number(parameters.get("latent_days"), 0.1, 60.0, "latent_days"),
-        infectious_days=_number(
-            parameters.get("infectious_days"), 0.1, 90.0, "infectious_days"
-        ),
+        infectious_days=_number(parameters.get("infectious_days"), 0.1, 90.0, "infectious_days"),
         asymptomatic_fraction=_number(
             parameters.get("asymptomatic_fraction"), 0.0, 0.99, "asymptomatic_fraction"
         ),
@@ -286,12 +284,7 @@ def _derivative(
     imported = np.minimum(safe[:, S], imports)
     vaccinations = np.zeros_like(populations)
     if day >= spec.vaccine_start_day:
-        vaccinations = (
-            spec.vaccination_per_1000_per_day
-            * vaccination_factor
-            * populations
-            / 1000.0
-        )
+        vaccinations = spec.vaccination_per_1000_per_day * vaccination_factor * populations / 1000.0
         vaccinations = np.minimum(vaccinations, safe[:, S])
     sigma = 1 / spec.latent_days
     gamma = 1 / spec.infectious_days
@@ -365,9 +358,10 @@ def _mobility_kernel(spec: ModelSpec) -> np.ndarray:
     longitudes = np.radians([location.longitude for location in spec.locations])
     dlat = latitudes[:, None] - latitudes[None, :]
     dlon = longitudes[:, None] - longitudes[None, :]
-    haversine = np.sin(dlat / 2) ** 2 + np.cos(latitudes[:, None]) * np.cos(
-        latitudes[None, :]
-    ) * np.sin(dlon / 2) ** 2
+    haversine = (
+        np.sin(dlat / 2) ** 2
+        + np.cos(latitudes[:, None]) * np.cos(latitudes[None, :]) * np.sin(dlon / 2) ** 2
+    )
     distance = 6371.0 * 2 * np.arcsin(np.sqrt(np.clip(haversine, 0.0, 1.0)))
     weights = np.array([location.travel_weight for location in spec.locations])
     kernel = np.exp(-distance / spec.mobility_distance_km) * weights[None, :]
@@ -407,6 +401,7 @@ def _simulate_ensemble(spec: ModelSpec) -> tuple[_Trajectory, ...]:
     trajectories: list[_Trajectory] = []
     for _index in range(size):
         sigma = spec.uncertainty_fraction
+
         def multiplier(scale: float = sigma) -> float:
             return float(np.clip(rng.lognormal(0.0, scale), 0.35, 2.5))
 
@@ -432,9 +427,7 @@ def _events_from_trajectory(
     total_weeks = math.ceil(spec.duration_days / 7)
     points_per_week = min(3, len(spec.locations))
     sample_count = min(total_weeks + 1, max(2, MAX_MODEL_EVENTS // points_per_week))
-    sample_weeks = np.unique(
-        np.rint(np.linspace(0, total_weeks, sample_count)).astype(int)
-    )
+    sample_weeks = np.unique(np.rint(np.linspace(0, total_weeks, sample_count)).astype(int))
     events: list[dict[str, object]] = []
     populations = np.array([location.population for location in spec.locations])
     for week in sample_weeks:
@@ -611,9 +604,7 @@ def _validate_initial_state(spec: ModelSpec) -> None:
         if allocated > location.population:
             raise ModelInputError(f"Initial compartments exceed population in {location.name}")
         total_seed += (
-            location.initial_exposed
-            + location.initial_infectious
-            + location.daily_importations
+            location.initial_exposed + location.initial_infectious + location.daily_importations
         )
     if total_seed <= 0:
         raise ModelInputError("Model needs an initial exposure, infection, or importation")

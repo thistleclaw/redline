@@ -24,6 +24,13 @@ focus and watch regions. Source text is marked as untrusted data in the system i
 prompt-injection risk. Only request purpose and successful model name enter the audit log; prompts,
 contexts, and answers do not.
 
+The `:test ai model` pipeline makes two explicit Gemini calls around one local calculation. The
+first returns schema-validated assumptions; NumPy remains the sole producer of outcome values; the
+second receives those validated parameters, the deterministic summary, and at most 40 sampled
+timeline events solely to explain the result in plain language. Its instruction forbids
+recalculation, invented values, real-world forecasting, and medical advice. The Inspector displays
+a rotating Braille activity indicator while AI or local calculation work is pending.
+
 `SourceDocument` versions are immutable by canonical URL plus content hash. `EventSource` links
 retain each source document even when deterministic aliases group documents into a `Situation`.
 The model never calculates a disease-risk score. Red alerts represent either a PHEIC or a new,

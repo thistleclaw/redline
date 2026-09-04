@@ -114,6 +114,11 @@ class FakeGemini:
                 ),
                 "gemini-3.5-flash-lite",
             )
+        if "SEIR_RESULT_JSON" in prompt:
+            return GeminiResult(
+                "Пик приходится на середину сценария. Это синтетический расчёт, не прогноз.",
+                "gemini-3.1-flash-lite",
+            )
         assert "MONITOR_CONTEXT" in prompt
         return GeminiResult(
             "## Context **answer**\n- [WHO](https://who.int/source_path)",
@@ -136,6 +141,25 @@ def test_crt_tick_is_safe_before_widgets_mount() -> None:
     app = RedlineApp(config=Config(crt_effects=True, translation_enabled=False))
 
     app.tick_crt()
+
+
+@pytest.mark.asyncio
+async def test_ai_work_uses_a_live_braille_spinner(tmp_path):
+    app = RedlineApp(
+        config=Config(initialized=True, crt_effects=False, translation_enabled=False),
+        database=Database(tmp_path / "redline.sqlite3"),
+    )
+
+    async with app.run_test(size=(120, 30)) as pilot:
+        app._start_ai_animation("GEMINI → NUMPY → GEMINI")
+        first = str(app.query_one("#details").renderable)
+        await pilot.pause(0.15)
+        second = str(app.query_one("#details").renderable)
+        app._stop_ai_animation()
+
+        assert first != second
+        assert "GEMINI → NUMPY → GEMINI" in second
+        assert app.ai_animation_timer is None
 
 
 @pytest.mark.asyncio
@@ -514,9 +538,7 @@ async def test_forecast_command_rejects_an_unknown_direction(tmp_path):
 
     async with app.run_test(size=(120, 35)):
         app.execute_command(":forecast ai neutral")
-        assert "Использование: :forecast ai <bad|good>" in str(
-            app.query_one("#details").renderable
-        )
+        assert "Использование: :forecast ai <bad|good>" in str(app.query_one("#details").renderable)
         assert gemini.requests == []
 
 

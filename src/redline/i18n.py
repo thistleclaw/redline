@@ -218,8 +218,8 @@ TEXT: dict[str, dict[str, str]] = {
         "en": "GEMINI // building a synthetic timelapse...",
     },
     "ai.model_running": {
-        "ru": "GEMINI // подбор параметров... NUMPY // локальный расчёт SEIR...",
-        "en": "GEMINI // selecting parameters... NUMPY // calculating SEIR locally...",
+        "ru": "GEMINI // параметры → NUMPY // SEIR → GEMINI // понятное объяснение...",
+        "en": "GEMINI // parameters → NUMPY // SEIR → GEMINI // plain-language explanation...",
     },
     "ai.error": {"ru": "GEMINI // ошибка: {error}", "en": "GEMINI // error: {error}"},
     "ai.answer_heading": {"ru": "GEMINI // ОТВЕТ", "en": "GEMINI // ANSWER"},
@@ -265,8 +265,8 @@ TEXT: dict[str, dict[str, str]] = {
         "en": "TIMELAPSE // “{title}” · {weeks} weeks · speed {speed}\nModel: {model}\nEvents are synthetic and exist only in memory.",
     },
     "test.model_generated": {
-        "ru": "SEIR MODEL // «{title}» · {weeks} нед. · скорость {speed}\nДвижок: {model}\n\n{summary}",
-        "en": "SEIR MODEL // “{title}” · {weeks} weeks · speed {speed}\nEngine: {model}\n\n{summary}",
+        "ru": "SEIR MODEL + AI EXPLANATION // «{title}» · {weeks} нед. · скорость {speed}\nЦепочка: {model}\n\n{summary}",
+        "en": "SEIR MODEL + AI EXPLANATION // “{title}” · {weeks} weeks · speed {speed}\nPipeline: {model}\n\n{summary}",
     },
     "test.timelapse_status": {
         "ru": "TIMELAPSE · неделя {week}/{total} · {speed} · {state}",

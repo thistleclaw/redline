@@ -54,6 +54,7 @@ COMMAND_COMPLETIONS = (
 TIMELAPSE_SPEED = re.compile(r"^(\d+)w/(?:([0-9]+(?:\.[0-9]+)?)s|s)$", re.IGNORECASE)
 TIMELAPSE_DURATION = re.compile(r"^(\d+)(d|w|m|y)$", re.IGNORECASE)
 MAX_COMMAND_HISTORY = 200
+BRAILLE_SPINNER = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
 
 
 def parse_timelapse_speed(value: str) -> tuple[int, float, str]:
@@ -283,6 +284,9 @@ class RedlineApp(App[None]):
         self.timelapse_timer: Timer | None = None
         self.timelapse_run_id = ""
         self.timelapse_base = utcnow()
+        self.ai_animation_timer: Timer | None = None
+        self.ai_animation_label = ""
+        self.ai_animation_frame = 0
         self.active_right_panel = "details"
         self.active_tui_field = "details"
         self.command_history_path = command_history_path or data_dir() / "command_history"
@@ -349,6 +353,26 @@ class RedlineApp(App[None]):
             return
         self._update_navigation_markers()
         self.query_one("#notice", Static).update(tr(self.config.language, "notice"))
+
+    def _start_ai_animation(self, label: str) -> None:
+        self._stop_ai_animation()
+        self.ai_animation_label = label
+        self.ai_animation_frame = 0
+        self._tick_ai_animation()
+        self.ai_animation_timer = self.set_interval(0.12, self._tick_ai_animation)
+
+    def _tick_ai_animation(self) -> None:
+        if not self.is_mounted or not self.ai_animation_label:
+            return
+        frame = BRAILLE_SPINNER[self.ai_animation_frame % len(BRAILLE_SPINNER)]
+        self.ai_animation_frame += 1
+        self.query_one("#details", Static).update(f"{frame}  {self.ai_animation_label}")
+
+    def _stop_ai_animation(self) -> None:
+        if self.ai_animation_timer is not None:
+            self.ai_animation_timer.stop()
+        self.ai_animation_timer = None
+        self.ai_animation_label = ""
 
     def _update_navigation_markers(self) -> None:
         feed_prefix = "▶ " if self.active_tui_field == "feed" else ""
@@ -584,9 +608,7 @@ class RedlineApp(App[None]):
                 f"{gap}W{max(0, self.timelapse_week)}/{self.timelapse.duration_weeks}",
                 style="bold #f59e0b",
             )
-        text.append(
-            f"{gap}PHEIC:{value_gap}{pheic}", style="bold #ff4f61" if pheic else "#60a5fa"
-        )
+        text.append(f"{gap}PHEIC:{value_gap}{pheic}", style="bold #ff4f61" if pheic else "#60a5fa")
         text.append(
             f"{gap}ALERT:{value_gap}{unread}",
             style="bold #ff4f61" if unread else "#94a3b8",
@@ -1026,10 +1048,15 @@ class RedlineApp(App[None]):
 
     def _command_forecast(self, args: list[str]) -> None:
         normalized = [item.casefold() for item in args]
-        if len(normalized) != 2 or normalized[0] != "ai" or normalized[1] not in {
-            "bad",
-            "good",
-        }:
+        if (
+            len(normalized) != 2
+            or normalized[0] != "ai"
+            or normalized[1]
+            not in {
+                "bad",
+                "good",
+            }
+        ):
             raise ValueError(tr(self.config.language, "command.forecast_usage"))
         self.run_ai_request(f"forecast_{normalized[1]}", "")
 
@@ -1124,7 +1151,7 @@ class RedlineApp(App[None]):
         running_key = (
             "ai.forecast_running" if purpose in {"forecast_bad", "forecast_good"} else "ai.running"
         )
-        self.query_one("#details", Static).update(tr(self.config.language, running_key))
+        self._start_ai_animation(tr(self.config.language, running_key))
         context = monitor_context(
             self.database,
             self.config,
@@ -1181,10 +1208,12 @@ class RedlineApp(App[None]):
         try:
             result = await self.gemini.generate(prompt, system_instruction=system)
         except GeminiError as error:
+            self._stop_ai_animation()
             self.query_one("#details", Static).update(
                 tr(self.config.language, "ai.error", error=str(error)[:500])
             )
             return
+        self._stop_ai_animation()
         self._audit_ai_request(purpose, result.model)
         self.viewer_open = True
         self.query_one("#details", Static).update(
@@ -1201,17 +1230,19 @@ class RedlineApp(App[None]):
         if not self.gemini.configured:
             self.query_one("#details", Static).update(tr(self.config.language, "ai.key_missing"))
             return
-        self.query_one("#details", Static).update(tr(self.config.language, "ai.test_running"))
+        self._start_ai_animation(tr(self.config.language, "ai.test_running"))
         try:
             scenario = await generate_test_scenario(self.gemini, query, self.config.language)
             self._enter_test_mode(reset=True)
             assert self.test_database is not None
             count = ingest_test_scenario(self.test_database, scenario)
         except GeminiError as error:
+            self._stop_ai_animation()
             self.query_one("#details", Static).update(
                 tr(self.config.language, "ai.error", error=str(error)[:500])
             )
             return
+        self._stop_ai_animation()
         self._audit_ai_request("test_scenario", scenario.model)
         self.refresh_view()
         self.query_one("#details", Static).update(
@@ -1237,7 +1268,7 @@ class RedlineApp(App[None]):
         if not self.gemini.configured:
             self.query_one("#details", Static).update(tr(self.config.language, "ai.key_missing"))
             return
-        self.query_one("#details", Static).update(tr(self.config.language, "ai.timelapse_running"))
+        self._start_ai_animation(tr(self.config.language, "ai.timelapse_running"))
         try:
             timelapse = await generate_test_timelapse(
                 self.gemini,
@@ -1246,10 +1277,12 @@ class RedlineApp(App[None]):
                 requested_duration_weeks=duration_weeks,
             )
         except GeminiError as error:
+            self._stop_ai_animation()
             self.query_one("#details", Static).update(
                 tr(self.config.language, "ai.error", error=str(error)[:500])
             )
             return
+        self._stop_ai_animation()
         self._enter_test_mode(reset=True)
         self.timelapse = timelapse
         self.timelapse_week = -1
@@ -1286,7 +1319,7 @@ class RedlineApp(App[None]):
         if not self.gemini.configured:
             self.query_one("#details", Static).update(tr(self.config.language, "ai.key_missing"))
             return
-        self.query_one("#details", Static).update(tr(self.config.language, "ai.model_running"))
+        self._start_ai_animation(tr(self.config.language, "ai.model_running"))
         try:
             timelapse = await generate_test_model(
                 self.gemini,
@@ -1295,10 +1328,12 @@ class RedlineApp(App[None]):
                 requested_duration_weeks=duration_weeks,
             )
         except GeminiError as error:
+            self._stop_ai_animation()
             self.query_one("#details", Static).update(
                 tr(self.config.language, "ai.error", error=str(error)[:500])
             )
             return
+        self._stop_ai_animation()
         self._enter_test_mode(reset=True)
         self.timelapse = timelapse
         self.timelapse_week = -1
@@ -1319,7 +1354,7 @@ class RedlineApp(App[None]):
                 weeks=timelapse.duration_weeks,
                 speed=speed_label,
                 model=timelapse.model,
-                summary=timelapse.summary,
+                summary=markdown_to_plain_text(timelapse.summary),
             )
         )
 

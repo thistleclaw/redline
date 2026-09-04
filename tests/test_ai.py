@@ -261,7 +261,7 @@ async def test_ai_timelapse_honors_an_explicit_multi_year_duration():
 
 
 @pytest.mark.asyncio
-async def test_ai_model_uses_gemini_only_for_parameters_and_numpy_for_outcomes():
+async def test_ai_model_uses_numpy_for_outcomes_then_gemini_for_explanation():
     payload = {
         "title": "Local model",
         "disease": "Test virus",
@@ -305,18 +305,31 @@ async def test_ai_model_uses_gemini_only_for_parameters_and_numpy_for_outcomes()
     }
 
     class FakeClient:
-        async def generate(self, prompt, *, system_instruction, response_schema=None):
-            assert "MODEL PARAMETERS" in system_instruction
-            assert "never generate outcome rows" in system_instruction
-            assert "events" not in response_schema["properties"]
-            return GeminiResult(json.dumps(payload), "gemini-3.5-flash-lite")
+        requests = []
 
-    result = await generate_test_model(
-        FakeClient(), "test epidemic", "en", requested_duration_weeks=20
-    )
+        async def generate(self, prompt, *, system_instruction, response_schema=None):
+            self.requests.append((prompt, system_instruction, response_schema))
+            if response_schema is not None:
+                assert "MODEL PARAMETERS" in system_instruction
+                assert "never generate outcome rows" in system_instruction
+                assert "events" not in response_schema["properties"]
+                return GeminiResult(json.dumps(payload), "gemini-3.5-flash-lite")
+            assert "SEIR_RESULT_JSON" in prompt
+            assert "Do not recalculate" in system_instruction
+            assert '"deterministic_summary"' in prompt
+            return GeminiResult(
+                "The local model reaches its active-infection peak during the scenario.",
+                "gemini-3.1-flash-lite",
+            )
+
+    client = FakeClient()
+    result = await generate_test_model(client, "test epidemic", "en", requested_duration_weeks=20)
 
     assert result.duration_weeks == 20
     assert result.engine == "numpy_seir"
     assert result.events
     assert all(event["emergency"] == "none" for event in result.events)
     assert "NumPy SEAIRHDV" in result.model
+    assert "explanation: gemini-3.1-flash-lite" in result.model
+    assert result.summary.startswith("The local model")
+    assert len(client.requests) == 2
